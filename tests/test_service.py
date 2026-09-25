@@ -58,6 +58,19 @@ def test_late_prediction_is_flagged(data_dir):
     assert frbd["date"] == "2026-02-10" and frbd["late"] is True
 
 
+def test_learned_month_end_holiday_is_skipped(data_dir):
+    rows = [r for r in synthetic_rows(150)  # 2026-01-01 .. 2026-05-30
+            if not (r["market"] == "faridabad"
+                    and (dt.date.fromisoformat(r["date"]) + dt.timedelta(days=1)).day == 1)]
+    rows = [r for r in rows if r["date"] <= "2026-05-30"]
+    write_results(data_dir / "results.csv", rows)
+    service.cycle(fetch=False, now=at(2026, 5, 30, 20))  # after 30 May result
+    frbd = [p for p in storage.load_predictions() if p["market"] == "faridabad"][0]
+    assert frbd["date"] == "2026-06-01"  # 31 May is a learned holiday
+    gali = [p for p in storage.load_predictions() if p["market"] == "gali"][0]
+    assert gali["date"] == "2026-05-31"  # Gali had month-end results in this data
+
+
 def test_holiday_moves_target_forward(data_dir):
     write_results(data_dir / "results.csv", synthetic_rows(40))  # last date 2026-02-09
     service.cycle(fetch=False, now=at(2026, 2, 13, 10))

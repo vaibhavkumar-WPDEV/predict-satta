@@ -35,14 +35,41 @@ _lock = threading.Lock()
 MIN_DATA = 10
 
 
+DAY_KINDS = {
+    "month_end": lambda d: (d + dt.timedelta(days=1)).day == 1,
+    "month_start": lambda d: d.day == 1,
+}
+
+
+def closed_days(sd: SeriesData) -> list[str]:
+    """Day kinds on which this market (almost) never has a result, learned from its history.
+
+    e.g. Faridabad/Ghaziabad/Gali close on the last day of the month and
+    Disawar's chart skips the 1st.
+    """
+    if sd.n < 30:
+        return []
+    have = set(sd.dates)
+    days = [sd.dates[0] + dt.timedelta(days=k) for k in range((sd.dates[-1] - sd.dates[0]).days + 1)]
+    out = []
+    for kind, test in DAY_KINDS.items():
+        cands = [d for d in days if test(d)]
+        missing = sum(1 for d in cands if d not in have)
+        if len(cands) >= 3 and missing >= 0.8 * len(cands):
+            out.append(kind)
+    return out
+
+
 def next_target_date(market: str, sd: SeriesData, now: dt.datetime) -> dt.date:
     now = now.astimezone(config.IST)
     today = now.date()
     cand = sd.dates[-1] + dt.timedelta(days=1) if sd.n else today
     if cand < today:
         cand = today
-    # if the result time passed long ago and still nothing: holiday -> next day
-    while now > config.result_datetime(market, cand) + dt.timedelta(hours=6):
+    closed = [DAY_KINDS[k] for k in closed_days(sd)]
+    # skip learned holidays, and days whose result time passed long ago without a result
+    while (any(test(cand) for test in closed)
+           or now > config.result_datetime(market, cand) + dt.timedelta(hours=6)):
         cand += dt.timedelta(days=1)
     return cand
 
@@ -202,6 +229,7 @@ def _analyse_market(table, market, preds, now, lock_new: bool):
         locked = new
     payload = {
         **base, "ready": True,
+        "closed_days": closed_days(sd),
         "next": locked,
         "backtest": _backtest(rep),
         "live": None,  # filled by caller once new predictions are appended

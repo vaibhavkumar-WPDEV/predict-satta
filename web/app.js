@@ -91,6 +91,7 @@ function predictionCard(m, hero) {
     <div class="row"><span class="big">Result date</span> <b>${esc(p.date)}</b>
       <span class="big">· time ~${esc(m.result_time)} IST</span></div>
     ${hero ? `<div class="countdown" data-until="${esc(p.result_time)}"></div>` : ""}
+    ${(m.closed_days || []).length ? `<div class="muted" style="font-size:12px">Data se seekha: ${m.closed_days.map((k) => ({ month_end: "mahine ke aakhri din", month_start: "mahine ki 1 tareekh" }[k] || k)).join(", ")} result nahi aata — us din ki prediction nahi banti.</div>` : ""}
     <div class="jodis">${jodis}</div>
     <div class="digits">
       <span>Andar: ${p.andar.map(([d, pr]) => `<b>${d}</b><small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>

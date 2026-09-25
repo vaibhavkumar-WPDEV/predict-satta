@@ -61,8 +61,10 @@ result se pehle bani. Actions tab me "Auto predict" → "Run workflow" se turant
 chala sakte ho.
 
 Dashboard online dekhne ke liye: repo **Settings → Pages → Deploy from branch →
-main / (root)**. Phir `https://<username>.github.io/predict-satta/` khulega
-(static mode, har ghante update).
+`claude/satta-prediction-tool-0q71fv` (ya jo default branch ho) / (root)**. Phir
+`https://<username>.github.io/predict-satta/` khulega (static mode, har ghante
+update). Private repo par Pages ke liye GitHub ka paid plan chahiye; warna
+`python -m satta serve` se local chalao.
 
 ## 3. Dashboard
 
@@ -143,6 +145,14 @@ bilkul live jaisa. `tests/test_engine.py::test_no_future_leak` isko check karta 
 Faridabad yearly charts). Parser kisi bhi table layout ko samajhta hai (market
 columns, month columns, date list). Kai sources majority vote se merge hote hain.
 Naya source add karna ho to `data/sources.json` me same format me likho.
+
+Data checks jo har fetch par chalte hain:
+
+- har website ka raw data `data/raw/<source>.csv` me alag save hota hai
+- sources ko aapas me same din aur ±1 din shift par milaya jaata hai (dashboard `sync.agreement`)
+- tareekh jaisa dikhne wala column aur result-time se pehle ka "result" reject hota hai
+- chhutti ke din data se seekhe jaate hain (abhi: Faridabad/Ghaziabad/Gali — mahine
+  ka aakhri din, Disawar — 1 tareekh) aur un dino ki prediction nahi banti
 
 ## 7. Technology
 
