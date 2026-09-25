@@ -28,7 +28,7 @@ import numpy as np
 from . import config, scraper, storage
 from .engine import formulas, theorems
 from .engine.base import SeriesData, andar_bahar
-from .engine.ensemble import (Replay, digit_top, postmortem, predict_next, replay, score,
+from .engine.ensemble import (Replay, digit_top, postmortem, predict_next, rank_of, replay, score,
                               summarize, top_list)
 
 log = logging.getLogger("satta.service")
@@ -159,6 +159,31 @@ def _backtest(rep: Replay, rows: int = 200) -> dict:
         "last30": _clean(summarize(scores[-30:])),
         "last7": _clean(summarize(scores[-7:])),
         "rows": table,
+    }
+
+
+def _coverage(rep: Replay) -> dict | None:
+    """How the hit rate grows when more numbers are covered: tested vs random.
+
+    For every list size N the walk-forward backtest says how often the real
+    number was inside the engine's top-N. Random picking gives N/100.
+    """
+    if not rep.steps:
+        return None
+    ranks = np.array([rank_of(s.mix, s.actual) for s in rep.steps])
+    a_ranks, b_ranks = [], []
+    for s in rep.steps:
+        at, ab = andar_bahar(s.mix)
+        a_ranks.append(rank_of(at, s.actual // 10))
+        b_ranks.append(rank_of(ab, s.actual % 10))
+    a_ranks, b_ranks = np.array(a_ranks), np.array(b_ranks)
+    last = ranks[-200:]
+    return {
+        "days": len(ranks),
+        "jodi": [{"n": n, "tested": _r((ranks <= n).mean()), "tested_200": _r((last <= n).mean()),
+                  "random": n / 100} for n in (1, 5, 10, 20, 30, 40, 50)],
+        "andar": [{"k": k, "tested": _r((a_ranks <= k).mean()), "random": k / 10} for k in (1, 2, 3, 5)],
+        "bahar": [{"k": k, "tested": _r((b_ranks <= k).mean()), "random": k / 10} for k in (1, 2, 3, 5)],
     }
 
 
@@ -312,6 +337,7 @@ def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=No
         "closed_days": closed_days(sd),
         "next": locked,
         "backtest": _backtest(rep),
+        "coverage": _coverage(rep),
         "live": None,  # filled by caller once new predictions are appended
         "weights": _weights_history(rep),
         "progress": _progress(rep),

@@ -135,8 +135,63 @@ function renderToday() {
       ${allFailed ? "<br>Koi bhi result website nahi khuli (internet/firewall check karo). Sources: " + srcs.map((s) => esc(s.source)).join(", ") : ""}</div>`;
   }
   $("#tab-today").innerHTML = banner + (primary ? predictionCard(primary, true) : "") +
+    (primary ? coverageCard(primary) : "") +
     `<div class="grid">${others.map((m) => predictionCard(m, false)).join("")}</div>`;
+  const rate = $("#payRate");
+  if (rate) rate.addEventListener("change", (e) => { state.rate = Number(e.target.value) || 90; renderToday(); });
   tickCountdown();
+}
+
+// Ranking that starts with the locked list (exact order) and continues by probability.
+function ranked(locked, probs, n) {
+  const seen = new Set(locked.map(([v]) => v));
+  const rest = probs.map((p, v) => [v, p]).filter(([v]) => !seen.has(v))
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+  return locked.concat(rest).slice(0, n);
+}
+
+// "Percentage kaise badhe": the only honest lever is covering more numbers.
+function coverageCard(m) {
+  const c = m.coverage;
+  const p = m.next;
+  if (!m.ready || !c || !p || !p.dist) return "";
+  const rate = state.rate || 90;
+  const rows = c.jodi.map((r) => {
+    const top = ranked(p.top10, p.dist, r.n);
+    const claim = top.reduce((s, x) => s + x[1], 0);
+    const back = r.tested * rate * 100 / r.n;
+    const list = top.map(([v]) => jd(v)).join(" ");
+    return `<tr>
+      <td class="num"><b>${r.n}</b></td>
+      <td class="mono">${r.n <= 10 ? list : `<details><summary>${r.n} numbers dekho</summary>${list}</details>`}</td>
+      <td class="num">${pct(claim)}</td>
+      <td class="num"><b>${pct(r.tested)}</b><br><small class="muted">200 din: ${pct(r.tested_200)}</small></td>
+      <td class="num">${pct(r.random, 0)}</td>
+      <td class="num">₹${back.toFixed(0)}</td></tr>`;
+  }).join("");
+  const at = [], ab = [];
+  p.dist.forEach((x, v) => { at[Math.floor(v / 10)] = (at[Math.floor(v / 10)] || 0) + x; ab[v % 10] = (ab[v % 10] || 0) + x; });
+  const digitRows = (arr, tested, name) => tested.map((r) => {
+    const top = ranked(name === "Andar" ? p.andar : p.bahar, arr, r.k);
+    return `<tr><td>${name} top-${r.k}</td><td class="mono">${top.map(([d]) => d).join(", ")}</td>
+      <td class="num"><b>${pct(r.tested)}</b></td><td class="num">${pct(r.random, 0)}</td></tr>`;
+  }).join("");
+  return `
+  <div class="card">
+    <h2>Percentage kaise badhe? Jitne zyada numbers, utna zyada chance</h2>
+    <p class="muted">${esc(m.name)} ke agle result (${esc(p.date)}) ke liye tool ki list. "Asli test" = pichle ${c.days} din me bina result dekhe tool ki top-N list me asli number kitni baar aaya.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="num">Kitne numbers</th><th>Tool ke numbers</th><th class="num">Model ka dawa</th>
+      <th class="num">Asli test</th><th class="num">Random</th>
+      <th class="num">₹100 lagane par ausatan wapas<br><small class="muted">rate
+        <input id="payRate" type="number" min="1" max="200" value="${rate}" style="width:52px"> guna</small></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <h3>Andar / Bahar</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Digits</th><th class="num">Asli test</th><th class="num">Random</th></tr></thead>
+      <tbody>${digitRows(at, c.andar, "Andar")}${digitRows(ab, c.bahar, "Bahar")}</tbody></table></div>
+    <p class="muted" style="font-size:12px">Hisaab: N numbers par ₹100 barabar baantne se har number par ₹100/N lagta hai; asli number list me aaya to ₹100/N × rate milta hai. Ausatan wapas = asli test % × rate × 100 / N. Random picking me yeh hamesha ₹${rate} hota hai, chahe N kitna bhi ho.</p>
+  </div>`;
 }
 
 function tickCountdown() {
