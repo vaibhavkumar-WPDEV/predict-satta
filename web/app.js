@@ -124,6 +124,7 @@ function renderToday() {
         <b>${esc(primary.name)} — honest check:</b> pichle ${primary.backtest.all.n} din ke walk-forward test me
         Top-10 me asli number <b>${pct(h.rate)}</b> baar aaya; random guess se <b>10%</b> aata. ${pv(h.p_value)}.
         ${better ? "Tool random se behtar dikh raha hai." : "Abhi tak tool random chance se behtar sabit nahi hua — numbers ko guarantee mat samjho."}
+        ${primary.selfbreak ? `<br>"Khud ko todo" test: asli data par top-10 ${pct(primary.selfbreak.real_hit10)}, shuffled (pattern-less) data par ${pct(primary.selfbreak.shuffled_hit10)} — ${esc(primary.selfbreak.verdict)}.` : ""}
       </div>`;
     }
   } else if (!ms.some((m) => m.ready)) {
@@ -226,12 +227,35 @@ function renderLearning() {
       <td><b>${esc(e.label)}</b><div class="muted formula" style="font-size:12px">${esc(e.theory)}</div></td>
       <td class="num">${pct(e.weight)}</td><td class="num">${e.mean_rank ?? "–"}</td>
       <td class="num">${pct(e.hit10_rate)}</td><td class="num">${e.avg_logloss ?? "–"}</td></tr>`).join("");
-  $("#tab-learning").innerHTML = `
+  const pg = m.progress;
+  const sb = m.selfbreak;
+  const cmp = (s) => (s && s.n ? `${pct(s.hit10.rate)} top-10 · avg rank ${s.mean_rank.value.toFixed(1)} · log-loss ${s.logloss.value.toFixed(3)}` : "–");
+  const progressCard = pg ? `
+    <div class="card"><h2>Seekhne ka asar: kitna sudhra?</h2>
+      <p class="muted">Wahi ${m.experts.length} models, ek baar har result se seekh kar (weights badal kar), ek baar bina seekhe (sab barabar). Line = pichle ${pg.window} din ka top-10 hit-rate.</p>
+      <div class="grid stats">
+        <div class="stat"><div class="s">Seekh kar (learned)</div><div class="v">${pct(pg.learned.hit10?.rate)}</div><div class="s">${cmp(pg.learned)}</div></div>
+        <div class="stat"><div class="s">Bina seekhe (equal)</div><div class="v">${pct(pg.equal.hit10?.rate)}</div><div class="s">${cmp(pg.equal)}</div></div>
+        <div class="stat"><div class="s">Sabse accha akela model</div><div class="v">${pct(pg.best_expert.hit10_rate)}</div><div class="s">${esc(pg.best_expert.label)}</div></div>
+        <div class="stat"><div class="s">Random chance</div><div class="v">10.0%</div><div class="s">avg rank 50.5 · log-loss 4.605</div></div>
+      </div>
+      <div id="pchart" style="margin-top:12px"></div>
+    </div>` : "";
+  const breakCard = sb ? `
+    <div class="card"><h2>"Khud ko todo" test (shuffle)</h2>
+      <p class="muted">Engine ko ${sb.shuffles} baar aisi history par chalaya jisme dates ka order ulta-pulta kar diya (har number utni hi baar, par koi time-pattern nahi). Agar asli data par engine shuffled se behtar nahi, to usne koi asli pattern nahi pakda.</p>
+      <div class="grid stats">
+        <div class="stat"><div class="s">Asli data (${sb.days} din)</div><div class="v">${pct(sb.real_hit10)}</div><div class="s">avg rank ${sb.real_mean_rank.toFixed(1)}</div></div>
+        <div class="stat"><div class="s">Shuffled data (average)</div><div class="v">${pct(sb.shuffled_hit10)}</div><div class="s">avg rank ${sb.shuffled_mean_rank.toFixed(1)}</div></div>
+        <div class="stat"><div class="s">Asli fayda</div><div class="v">${(sb.edge * 100).toFixed(1)} pts</div><div class="s">${esc(sb.verdict)}</div></div>
+      </div>
+    </div>` : "";
+  $("#tab-learning").innerHTML = progressCard + breakCard + `
     <div class="card"><h2>Self-correction: models ka bharosa (weight) har result ke baad</h2>
       <p class="muted formula">w<sub>i</sub> ← w<sub>i</sub> · P<sub>i</sub>(asli number) → normalize → 99% + 1% barabar baanto (Fixed-Share Hedge)</p>
       <div id="wchart"></div>
     </div>
-    <div class="card table-wrap"><h2>20 models (experts)</h2><table>
+    <div class="card table-wrap"><h2>${m.experts.length} models (experts)</h2><table>
       <thead><tr><th>Model aur uski math</th><th class="num">Weight</th><th class="num">Avg rank<br><small>(random 50.5)</small></th>
       <th class="num">Top-10 rate<br><small>(random 10%)</small></th><th class="num">Log-loss<br><small>(random 4.605)</small></th></tr></thead>
       <tbody>${rows}</tbody></table></div>`;
@@ -274,6 +298,11 @@ function lineChart(dates, series) {
 function drawWeights(m) {
   const el = $("#wchart");
   if (el) el.innerHTML = lineChart(m.weights.dates, m.weights.series);
+  const pc = $("#pchart");
+  if (pc && m.progress) {
+    const { dates, ...series } = m.progress.series;
+    pc.innerHTML = lineChart(dates, series);
+  }
 }
 
 // --------------------------------------------------------------- formulas
@@ -284,7 +313,8 @@ function renderFormulas() {
     $("#tab-formulas").innerHTML = `<div class="card">${esc(m.reason || (fr && fr.reason) || "")}</div>`;
     return;
   }
-  const names = { jodi: "Jodi formule (mod 100)", andar: "Andar formule (mod 10)", bahar: "Bahar formule (mod 10)" };
+  const names = { jodi: "Jodi formule (mod 100)", andar: "Andar formule (mod 10)", bahar: "Bahar formule (mod 10)",
+    aryabhata: "Aryabhata kuttaka: (a·pichla + c) mod 100 — 10,000 linear congruences" };
   const blocks = Object.entries(fr.kinds).map(([kind, k]) => `
     <div class="card table-wrap"><h2>${names[kind]}</h2>
       <p class="muted">${k.tested} formule try kiye. Random chance: ${pct(k.chance_rate, 0)}.
@@ -297,7 +327,7 @@ function renderFormulas() {
         <td class="num">${pv(r.p_value)}</td>
         <td>${r.significant ? '<span class="pill good">asli pattern</span>' : '<span class="pill">chance jaisa</span>'}</td></tr>`).join("")}
       </tbody></table>
-      ${k.next.length ? `<h3>Agle result ke liye (saare data par fit)</h3>${k.next.map((n) => `<div class="formula">${esc(n.formula)} → <b>${kind === "jodi" ? jd(n.value) : n.value}</b> <span class="muted">(${n.hits}/${n.n})</span></div>`).join("")}` : ""}
+      ${k.next.length ? `<h3>Agle result ke liye (saare data par fit)</h3>${k.next.map((n) => `<div class="formula">${esc(n.formula)} → <b>${kind === "andar" || kind === "bahar" ? n.value : jd(n.value)}</b> <span class="muted">(${n.hits}/${n.n})</span></div>`).join("")}` : ""}
     </div>`).join("");
   $("#tab-formulas").innerHTML = `
     <div class="card"><h2>Tool ke khud ke formule</h2>

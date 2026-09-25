@@ -144,6 +144,37 @@ def current_vars(sd: SeriesData, cur: dict) -> tuple[dict, dict]:
     return jv, dv
 
 
+def lcg_solve(y: np.ndarray, top: int = 3) -> list[tuple[int, int, int, int]]:
+    """Aryabhata's kuttaka for y_t ≡ a·y_(t-1) + c (mod 100): all a, best c. Returns (a, c, hits, n)."""
+    x, t = y[:-1], y[1:]
+    A = np.arange(100)[:, None]
+    R = (t[None, :] - A * x[None, :]) % 100
+    counts = np.bincount((A * 100 + R).ravel(), minlength=100 * 100)
+    best = np.argsort(-counts, kind="stable")[:top]
+    return [(int(b // 100), int(b % 100), int(counts[b]), len(t)) for b in best]
+
+
+def _lcg_report(sd: SeriesData, split: int, top: int, with_next: bool) -> dict:
+    Y = sd.y
+    me = _short(sd.market)
+    rows = []
+    for a, c, hits, n in lcg_solve(Y[:split], top):
+        pred = (a * Y[split - 1:-1] + c) % 100
+        t_hits = int((pred == Y[split:]).sum())
+        t_n = len(pred)
+        p_val = binom_sf(t_hits, t_n, 0.01)
+        rows.append({"formula": f"{me} = ({a}·{me}(pichla) + {c:02d}) mod 100",
+                     "train_hits": hits, "train_n": n, "train_rate": hits / n,
+                     "test_hits": t_hits, "test_n": t_n, "test_rate": t_hits / t_n,
+                     "chance_rate": 0.01, "p_value": p_val, "significant": p_val * top < 0.05})
+    nxt = []
+    if with_next:
+        for a, c, hits, n in lcg_solve(Y, 5):
+            nxt.append({"formula": f"{me} = ({a}·{me}(pichla) + {c:02d}) mod 100",
+                        "value": int((a * Y[-1] + c) % 100), "hits": hits, "n": n})
+    return {"tested": 100 * 100, "chance_rate": 0.01, "top": rows, "next": nxt}
+
+
 def report(sd: SeriesData, next_cur: dict | None, holdout: float = 0.3, top: int = 8) -> dict:
     """Discover on the first 70 %, verify on the last 30 %, then refit on all data."""
     n = sd.n
@@ -187,4 +218,5 @@ def report(sd: SeriesData, next_cur: dict | None, holdout: float = 0.3, top: int
                     live.append({"formula": expression(f, kind if kind != "jodi" else me, names),
                                  "value": val, "hits": f["hits"], "n": f["n"]})
         out["kinds"][kind] = {"tested": tested, "chance_rate": p0, "top": rows, "next": live}
+    out["kinds"]["aryabhata"] = _lcg_report(sd, split, top, next_cur is not None)
     return out

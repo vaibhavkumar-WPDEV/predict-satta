@@ -17,6 +17,7 @@ every 15 minutes, GitHub Actions every hour):
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import logging
 import math
@@ -161,6 +162,75 @@ def _backtest(rep: Replay, rows: int = 200) -> dict:
     }
 
 
+def _progress(rep: Replay, window: int = 50) -> dict | None:
+    """Did learning help? Learned weights vs the same experts with equal weights (no learning)."""
+    steps = rep.steps
+    if len(steps) < 10:
+        return None
+    learned = [score(s.mix, s.actual) for s in steps]
+    equal = [score(s.equal, s.actual) for s in steps]
+    best = int(np.argmin(rep.losses))
+    best_ranks = np.array([s.ranks[best] for s in steps])
+    w = min(window, len(steps))
+
+    def rolling(scores):
+        h = np.cumsum([1.0 if s["hit10"] else 0.0 for s in scores])
+        return [_r((h[i] - (h[i - w] if i >= w else 0)) / min(i + 1, w)) for i in range(len(scores))]
+
+    stride = max(1, len(steps) // 300)
+    idx = list(range(w - 1, len(steps), stride))
+    return {
+        "window": w,
+        "learned": _clean(summarize(learned)),
+        "equal": _clean(summarize(equal)),
+        "best_expert": {"label": rep.experts[best].label,
+                        "hit10_rate": _r((best_ranks <= 10).mean()),
+                        "mean_rank": _r(best_ranks.mean(), 2)},
+        "series": {"dates": [steps[i].date.isoformat() for i in idx],
+                   "Seekh kar (learned)": [rolling(learned)[i] for i in idx],
+                   "Bina seekhe (equal weights)": [rolling(equal)[i] for i in idx],
+                   "Random chance": [0.1 for _ in idx]},
+    }
+
+
+def self_break(table: dict, market: str, shuffles: int = 3, last: int = 150) -> dict | None:
+    """'Khud ko todo' test: run the same engine on copies of the history whose order is shuffled.
+
+    Shuffling keeps how often each number appears but destroys every time pattern. If the engine
+    scores about the same on shuffled history as on the real one, it has found no real pattern.
+    """
+    sd = SeriesData(table, market)
+    if sd.n < config.MIN_TRAIN + 40:
+        return None
+    start = max(config.MIN_TRAIN, sd.n - last)
+
+    def run(s):
+        rep = replay(s, start=start)
+        return summarize([score(x.mix, x.actual) for x in rep.steps])
+
+    real = run(sd)
+    rng = np.random.default_rng(20260926)
+    fakes = []
+    for _ in range(shuffles):
+        vals = sd.y.copy()
+        rng.shuffle(vals)
+        t2 = dict(table)
+        t2[market] = dict(zip(sd.dates, (int(v) for v in vals)))
+        fakes.append(run(SeriesData(t2, market)))
+    fake10 = float(np.mean([f["hit10"]["rate"] for f in fakes]))
+    fake_rank = float(np.mean([f["mean_rank"]["value"] for f in fakes]))
+    edge = real["hit10"]["rate"] - fake10
+    return _clean({
+        "days": real["n"], "shuffles": shuffles,
+        "real_hit10": real["hit10"]["rate"], "shuffled_hit10": fake10,
+        "real_mean_rank": real["mean_rank"]["value"], "shuffled_mean_rank": fake_rank,
+        "edge": edge,
+        "verdict": ("Asli data par engine shuffled data se kaafi behtar hai — time-pattern mila"
+                    if edge > 0.05 and real["hit10"]["p_value"] < 0.05 else
+                    "Asli aur shuffled data par barabar — engine ko koi time-pattern nahi mila"),
+    })
+
+
 def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.datetime) -> dict:
     steps = {s.date.isoformat(): s for s in rep.steps}
     rows, scores = [], []
@@ -209,7 +279,12 @@ def results_table(table: dict) -> list[dict]:
 
 # -------------------------------------------------------------- cycle
 
-def _analyse_market(table, market, preds, now, lock_new: bool):
+def table_hash(table: dict) -> str:
+    items = sorted((m, d.isoformat(), v) for m, s in table.items() for d, v in s.items())
+    return hashlib.sha256(json.dumps(items).encode()).hexdigest()[:16]
+
+
+def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=None):
     sd = SeriesData(table, market)
     meta = config.MARKETS[market]
     base = {"key": market, "name": meta["name"], "short": meta["short"],
@@ -234,6 +309,9 @@ def _analyse_market(table, market, preds, now, lock_new: bool):
         "backtest": _backtest(rep),
         "live": None,  # filled by caller once new predictions are appended
         "weights": _weights_history(rep),
+        "progress": _progress(rep),
+        # the shuffle test is slow, so it is reused until the results change
+        "selfbreak": prev_selfbreak if prev_selfbreak is not None else self_break(table, market),
         "experts": _experts_table(rep),
         "theorems": _clean(theorems.findings(sd, rep)),
         "formulas": _clean(fr),
@@ -257,9 +335,14 @@ def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = T
 
         table = storage.load_table()
         preds = storage.load_predictions()
+        thash = table_hash(table)
+        prev = load_dashboard() or {}
+        same = prev.get("engine") == config.ENGINE_VERSION and prev.get("data_hash") == thash
         markets, created = {}, []
         for m in config.MARKET_KEYS:
-            payload, extra = _analyse_market(table, m, preds, now, lock_new)
+            old = (prev.get("markets") or {}).get(m) or {}
+            payload, extra = _analyse_market(table, m, preds, now, lock_new,
+                                             old.get("selfbreak") if same else None)
             if extra and extra[0] is not None:
                 storage.append_prediction(extra[0])
                 preds.append(extra[0])
@@ -271,6 +354,7 @@ def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = T
         dash = {
             "generated_at": now.astimezone(config.IST).isoformat(timespec="seconds"),
             "engine": config.ENGINE_VERSION,
+            "data_hash": thash,
             "primary": config.PRIMARY_MARKET,
             "history_start": config.HISTORY_START.isoformat(),
             "sync": sync_info,

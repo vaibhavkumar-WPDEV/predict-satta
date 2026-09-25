@@ -46,6 +46,7 @@ class Step:
     new_weights: np.ndarray    # weights after learning from this result
     p_actual: np.ndarray       # each expert's probability of the actual number
     ranks: np.ndarray          # each expert's rank of the actual number (1 = best)
+    equal: np.ndarray          # same experts, equal weights, no learning (control)
 
 
 @dataclass
@@ -89,7 +90,7 @@ def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | Non
         nw = (1 - alpha) * nw + alpha / k
         order = np.argsort(-P, axis=1, kind="stable")
         ranks = np.argmax(order == y, axis=1) + 1
-        rep.steps.append(Step(sd.dates[i], y, mix, w, nw, pa, ranks))
+        rep.steps.append(Step(sd.dates[i], y, mix, w, nw, pa, ranks, P.mean(axis=0)))
         w = nw
     rep.weights = w
     rep.losses = losses

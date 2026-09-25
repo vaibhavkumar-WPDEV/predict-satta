@@ -27,7 +27,7 @@ python -m satta serve
 
 Browser me kholo: **http://localhost:8000**
 
-Pehli baar server khud Jan 2026 se aaj tak ka data websites se download karega
+Pehli baar server khud Jan 2025 se aaj tak ka data websites se download karega
 (1-2 minute). Uske baad har 15 minute me naya result check karta hai. "Abhi
 Update Karo" button dabane se turant cycle chalta hai.
 
@@ -39,7 +39,7 @@ Update Karo" button dabane se turant cycle chalta hai.
 | `python -m satta cycle` | Ek baar: fetch → check → seekho → predict → lock |
 | `python -m satta predict` | Har market ki locked agli prediction |
 | `python -m satta backtest --market faridabad --days 7` | 7 din ka test, har din ka hit/miss + reason |
-| `python -m satta table` | Jan 2026 se aaj tak ka poora result table |
+| `python -m satta table` | Jan 2025 se aaj tak ka poora result table |
 | `python -m satta formulas` | Tool ke khud ke formule + unseen data par test |
 | `python -m satta theorems` | Statistical findings (pattern hai ya random) |
 | `python -m satta verify` | Har locked prediction ka hash proof check |
@@ -80,7 +80,7 @@ update). Private repo par Pages ke liye GitHub ka paid plan chahiye; warna
 
 ## 4. Math — engine kaise sochta hai
 
-### 4.1 Twenty experts (har ek alag theory)
+### 4.1 25 experts (har ek alag theory)
 
 Har expert `P(agla number = v)` deta hai, v = 00..99.
 
@@ -97,8 +97,23 @@ Har expert `P(agla number = v)` deta hai, v = 00..99.
 | Weekday | hafte ke din ke hisaab se digit distribution |
 | Satta tricks | palti, cut (+5), ±1, ±10, ±11, 99−x, jod — har rule ka Beta-posterior hit-rate |
 | Pattern match | method of analogues: pichle 2/3 din jaise itihaas ke baad kya aaya |
-| Spectral | periodogram se top-3 cycles, least-squares harmonic fit, 1 din aage extrapolate |
+| Spectral (Fourier) | periodogram se top-3 cycles, least-squares harmonic fit, 1 din aage extrapolate |
 | Formula (jodi / digit) | tool ke khud ke formule (neeche), har 7 din par dobara search |
+| Aryabhata kuttaka | sab 10,000 linear congruences `y_t ≡ a·y_(t−1) + c (mod 100)`; digits par 2nd order `d_t ≡ a·d_(t−1) + b·d_(t−2) + c (mod 10)`. Kisi LCG random generator ko crack kar deta hai (test me 90%+ exact) |
+| Fibonacci / Golden ratio (Pingala, Da Vinci) | `y_t = (y_(t−1)+y_(t−2)) mod 100`, golden rotation `+100/φ`, Fibonacci lag echo `y_t = y_(t−F)` |
+| Vedic beejank / Tesla 3-6-9 | digital root `dr(x) = 1 + (x−1) mod 9` par Markov chain |
+| Einstein Brownian motion | random walk: badlaav `Δ = y_t − y_(t−1)` ka smoothed distribution |
+
+Formula-experts ka bharosa adaptive hai: `P = (1−g)·uniform + g·votes`, jahan `g` = best
+formula ka purana hit-rate (5–95%). Random data par g ≈ 5% rehta hai, asli formula par 90%+.
+
+### 4.2b Khud ko todo + seekhne ka asar
+
+- **Shuffle test:** engine ko 3 baar aisi history par chalaya jaata hai jisme dates ka order
+  shuffle hai (har number utni hi baar, par koi time-pattern nahi). Asli data par score
+  shuffled se behtar nahi → engine ne koi asli pattern nahi pakda.
+- **Learned vs equal weights:** wahi models bina seekhe (barabar weight) vs Hedge se seekh kar —
+  dashboard ke Learning tab me rolling 50-din top-10 rate ka graph.
 
 ### 4.2 Self-correction (Fixed-Share Hedge)
 
@@ -109,7 +124,7 @@ w_i        ← (1 − α)·w_i/Σw + α/N                 α = 1%, taaki koi mod
 ```
 
 **Theorem (Bayes mixture):** `L_mix ≤ min_i L_i + ln N` — cumulative log-loss me
-ensemble kabhi best single model se `ln 20 ≈ 3` se zyada peeche nahi rehta.
+ensemble kabhi best single model se `ln 25 ≈ 3.2` se zyada peeche nahi rehta.
 Dashboard ka T10 is theorem ko asli data par check karta hai.
 
 ### 4.3 Khud ke formule
@@ -175,7 +190,7 @@ satta/
   api.py           FastAPI backend
   engine/
     base.py        series, features, context (sirf past data)
-    experts.py     20 experts
+    experts.py     25 experts
     formulas.py    formula discovery + holdout test
     ensemble.py    Fixed-Share Hedge, replay, scoring, post-mortem
     theorems.py    statistical findings

@@ -66,6 +66,23 @@ def test_planted_pattern_is_learned():
     assert best.startswith("formula") or best in ("cross_market", "transforms")
 
 
+def test_aryabhata_cracks_a_linear_congruential_generator():
+    rows = synthetic_rows(160, seed=2)
+    x = 17
+    for r in rows:
+        if r["market"] == "faridabad":
+            x = (37 * x + 11) % 100
+            r["value"] = x
+    sd = SeriesData(table_from(rows), "faridabad")
+    rep = replay(sd)
+    best = rep.experts[int(np.argmax(rep.weights))].name
+    assert best == "aryabhata_lcg"
+    s = summarize([score(x.mix, x.actual) for x in rep.steps[-60:]])
+    assert s["hit1"]["rate"] > 0.9
+    fr = formulas.report(sd, sd.features_for(dt.date(2026, 6, 20), sd.n))
+    assert fr["kinds"]["aryabhata"]["top"][0]["formula"] == "FRBD = (37·FRBD(pichla) + 11) mod 100"
+
+
 def test_formula_report_finds_planted_formula():
     sd = SeriesData(table_from(synthetic_rows(200, seed=5, planted=True)), "faridabad")
     rep = formulas.report(sd, sd.features_for(dt.date(2026, 7, 20), sd.n))
