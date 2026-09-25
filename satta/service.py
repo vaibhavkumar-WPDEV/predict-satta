@@ -179,8 +179,13 @@ def _progress(rep: Replay, window: int = 50) -> dict | None:
 
     stride = max(1, len(steps) // 300)
     idx = list(range(w - 1, len(steps), stride))
+    tuning = []
+    if rep.meta is not None:
+        tuning = sorted(({"eta": e, "alpha": a, "weight": _r(float(v))}
+                         for (e, a), v in zip(rep.grid, rep.meta)), key=lambda r: -r["weight"])
     return {
         "window": w,
+        "tuning": tuning,
         "learned": _clean(summarize(learned)),
         "equal": _clean(summarize(equal)),
         "best_expert": {"label": rep.experts[best].label,

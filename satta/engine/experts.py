@@ -552,6 +552,8 @@ class FormulaDigit(Expert):
 
 
 def default_experts() -> list[Expert]:
+    from .advanced import NeuralNet, UniversalCTW
+
     return [
         Uniform(),
         Frequency(1.0),
@@ -578,4 +580,6 @@ def default_experts() -> list[Expert]:
         AryabhataDigit(),
         VedicTesla(),
         RandomWalk(),
+        UniversalCTW(),
+        NeuralNet(),
     ]

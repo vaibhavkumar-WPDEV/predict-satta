@@ -16,6 +16,13 @@ Guarantee (for alpha = 0, eta = 1):  L_mix ≤ min_i L_i + ln N,
 where L is the cumulative log-loss. So the mixture is never much worse than
 the best single expert in hindsight; the dashboard checks this on real data.
 
+Self-tuning (meta-learning): how fast to learn (eta) and how much to forget
+(alpha) are not fixed guesses. Nine ensembles run side by side, one for each
+eta in {0.5, 1, 2} and alpha in {0.002, 0.01, 0.05}, and a top-level Hedge
+weights them by how well each predicted. Because every ensemble is linear in
+the experts, the final prediction is again one expert mixture with effective
+weights  w_eff = Σ_g v_g · w_g.
+
 replay() walks forward through history and at each day uses only the data
 before that day: the backtest is exactly what the live system would have
 predicted on that day.
@@ -33,8 +40,8 @@ from .. import config
 from .base import SeriesData, andar_bahar
 from .experts import Expert, default_experts
 
-ETA = 1.0
-ALPHA = 0.01
+GRID = [(eta, alpha) for eta in (0.5, 1.0, 2.0) for alpha in (0.002, 0.01, 0.05)]
+META_ALPHA = 0.01
 
 
 @dataclass
@@ -57,6 +64,8 @@ class Replay:
     weights: np.ndarray | None = None
     losses: np.ndarray | None = None    # cumulative log-loss per expert
     mix_loss: float = 0.0
+    grid: list = field(default_factory=list)
+    meta: np.ndarray | None = None      # weight of each (eta, alpha) ensemble
 
 
 def rank_of(p: np.ndarray, v: int) -> int:
@@ -71,28 +80,37 @@ def expert_matrix(sd: SeriesData, experts: list[Expert], i: int, date: dt.date |
 
 
 def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | None = None,
-           eta: float = ETA, alpha: float = ALPHA) -> Replay:
+           grid: list[tuple[float, float]] | None = None) -> Replay:
     experts = experts or default_experts()
     start = config.MIN_TRAIN if start is None else start
-    k = len(experts)
-    w = np.full(k, 1.0 / k)
+    grid = grid or GRID
+    k, g = len(experts), len(grid)
+    etas = np.array([e for e, _ in grid])[:, None]
+    alphas = np.array([a for _, a in grid])[:, None]
+    W = np.full((g, k), 1.0 / k)   # expert weights inside each ensemble
+    v = np.full(g, 1.0 / g)        # meta weights over the ensembles
     losses = np.zeros(k)
-    rep = Replay(sd.market, experts)
+    rep = Replay(sd.market, experts, grid=grid)
     for i in range(start, sd.n):
         P = expert_matrix(sd, experts, i)
+        w = v @ W
         mix = w @ P
         y = int(sd.y[i])
-        pa = P[:, y]
-        losses -= np.log(np.maximum(pa, 1e-300))
+        pa = np.maximum(P[:, y], 1e-300)
+        losses -= np.log(pa)
         rep.mix_loss -= math.log(max(float(mix[y]), 1e-300))
-        nw = w * np.power(np.maximum(pa, 1e-300), eta)
-        nw /= nw.sum()
-        nw = (1 - alpha) * nw + alpha / k
+        v = v * (W @ pa)
+        v /= v.sum()
+        v = (1 - META_ALPHA) * v + META_ALPHA / g
+        W = W * np.power(pa[None, :], etas)
+        W /= W.sum(axis=1, keepdims=True)
+        W = (1 - alphas) * W + alphas / k
+        nw = v @ W
         order = np.argsort(-P, axis=1, kind="stable")
         ranks = np.argmax(order == y, axis=1) + 1
         rep.steps.append(Step(sd.dates[i], y, mix, w, nw, pa, ranks, P.mean(axis=0)))
-        w = nw
-    rep.weights = w
+    rep.weights = v @ W
+    rep.meta = v
     rep.losses = losses
     return rep
 

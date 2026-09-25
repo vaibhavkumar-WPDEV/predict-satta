@@ -80,7 +80,7 @@ update). Private repo par Pages ke liye GitHub ka paid plan chahiye; warna
 
 ## 4. Math — engine kaise sochta hai
 
-### 4.1 25 experts (har ek alag theory)
+### 4.1 27 experts (har ek alag theory)
 
 Har expert `P(agla number = v)` deta hai, v = 00..99.
 
@@ -103,9 +103,18 @@ Har expert `P(agla number = v)` deta hai, v = 00..99.
 | Fibonacci / Golden ratio (Pingala, Da Vinci) | `y_t = (y_(t−1)+y_(t−2)) mod 100`, golden rotation `+100/φ`, Fibonacci lag echo `y_t = y_(t−F)` |
 | Vedic beejank / Tesla 3-6-9 | digital root `dr(x) = 1 + (x−1) mod 9` par Markov chain |
 | Einstein Brownian motion | random walk: badlaav `Δ = y_t − y_(t−1)` ka smoothed distribution |
+| Universal prediction (CTW) | Context Tree Weighting (Willems 1995): andar/bahar ke har context 0–3 digits ka KT estimator, saare Markov orders ka exact Bayesian average |
+| Neural network | 1 hidden layer (32 tanh), input = pichle draws + doosre markets ke digits + weekday, online SGD + experience replay |
 
 Formula-experts ka bharosa adaptive hai: `P = (1−g)·uniform + g·votes`, jahan `g` = best
 formula ka purana hit-rate (5–95%). Random data par g ≈ 5% rehta hai, asli formula par 90%+.
+
+### 4.2a Meta-learning (self-tuning)
+
+Learning speed `η ∈ {0.5, 1, 2}` aur bhoolne ki dar `α ∈ {0.002, 0.01, 0.05}` ki 9 settings
+saath chalti hain; upar ek aur Hedge unhe weight deta hai. Final prediction phir bhi ek hi
+mixture hai: `w_eff = Σ_g v_g · w_g`. Dashboard Learning tab me dikhta hai tool ne kaunsi
+setting chuni.
 
 ### 4.2b Khud ko todo + seekhne ka asar
 
@@ -124,7 +133,7 @@ w_i        ← (1 − α)·w_i/Σw + α/N                 α = 1%, taaki koi mod
 ```
 
 **Theorem (Bayes mixture):** `L_mix ≤ min_i L_i + ln N` — cumulative log-loss me
-ensemble kabhi best single model se `ln 25 ≈ 3.2` se zyada peeche nahi rehta.
+ensemble kabhi best single model se `ln 27 ≈ 3.3` se zyada peeche nahi rehta.
 Dashboard ka T10 is theorem ko asli data par check karta hai.
 
 ### 4.3 Khud ke formule
@@ -190,7 +199,8 @@ satta/
   api.py           FastAPI backend
   engine/
     base.py        series, features, context (sirf past data)
-    experts.py     25 experts
+    experts.py     25 classic experts
+    advanced.py    universal prediction (CTW) + neural network
     formulas.py    formula discovery + holdout test
     ensemble.py    Fixed-Share Hedge, replay, scoring, post-mortem
     theorems.py    statistical findings

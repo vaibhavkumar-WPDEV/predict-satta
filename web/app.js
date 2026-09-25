@@ -240,6 +240,9 @@ function renderLearning() {
         <div class="stat"><div class="s">Random chance</div><div class="v">10.0%</div><div class="s">avg rank 50.5 · log-loss 4.605</div></div>
       </div>
       <div id="pchart" style="margin-top:12px"></div>
+      ${pg.tuning && pg.tuning.length ? `<h3>Self-tuning (meta-learning): tool ne khud chuna kitni tezi se seekhe</h3>
+        <p class="muted">η = learning speed (bada = ek result se zyada badlaav), α = bhoolne ki dar (bada = purana jaldi bhoole). 9 settings saath chalti hain, jo sahi nikli uska bharosa badhta hai.</p>
+        <div class="row">${pg.tuning.map((t, i) => `<span class="pill ${i === 0 ? "good" : ""}">η=${t.eta}, α=${t.alpha}: ${pct(t.weight)}</span>`).join("")}</div>` : ""}
     </div>` : "";
   const breakCard = sb ? `
     <div class="card"><h2>"Khud ko todo" test (shuffle)</h2>

@@ -83,6 +83,40 @@ def test_aryabhata_cracks_a_linear_congruential_generator():
     assert fr["kinds"]["aryabhata"]["top"][0]["formula"] == "FRBD = (37·FRBD(pichla) + 11) mod 100"
 
 
+def test_ctw_learns_a_repeating_pattern():
+    from satta.engine.advanced import CTW
+
+    c = CTW(depth=3)
+    seq = [1, 2, 3, 1, 2, 7] * 40
+    for x in seq:
+        c.update(x)
+    p = c.predict()  # history ends ... 2, 7 -> next is 1
+    assert abs(p.sum() - 1) < 1e-9
+    assert p.argmax() == 1 and p[1] > 0.85
+    # after "1, 2" the next symbol depends on deeper context (3 or 7)
+    c.update(1)
+    c.update(2)
+    assert c.predict().argmax() == 3
+
+
+def test_neural_net_learns_cross_market_digit_rule():
+    rows = synthetic_rows(300, seed=9)
+    tab = table_from(rows)
+    for d in sorted(tab["faridabad"]):
+        prev = tab["gali"].get(d - dt.timedelta(days=1))
+        if prev is not None:  # andar(FRBD) = bahar(GALI kal), bahar random
+            tab["faridabad"][d] = (prev % 10) * 10 + tab["faridabad"][d] % 10
+    sd = SeriesData(tab, "faridabad")
+    from satta.engine.advanced import NeuralNet
+
+    nn = NeuralNet()
+    hits = 0
+    for i in range(200, sd.n):
+        p = nn.predict(sd.context(i))
+        hits += int(p.reshape(10, 10).sum(1).argmax() == sd.y[i] // 10)
+    assert hits / (sd.n - 200) > 0.8
+
+
 def test_formula_report_finds_planted_formula():
     sd = SeriesData(table_from(synthetic_rows(200, seed=5, planted=True)), "faridabad")
     rep = formulas.report(sd, sd.features_for(dt.date(2026, 7, 20), sd.n))
