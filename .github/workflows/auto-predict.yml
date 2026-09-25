@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
+  # also run right away when the engine or this workflow changes
+  push:
+    paths:
+      - "satta/**"
+      - ".github/workflows/auto-predict.yml"
 
 permissions:
   contents: write
