@@ -16,6 +16,7 @@ from __future__ import annotations
 import calendar
 import datetime as dt
 import logging
+import os
 import re
 import time
 from collections import Counter, defaultdict
@@ -51,17 +52,22 @@ def _letters(s: str) -> str:
 
 
 def market_of_header(text: str) -> str | None:
-    """Map a header cell like 'FARIDABAD 06:15 PM' or 'FRBD' to a market key."""
+    """Map a header cell like 'FARIDABAD 06:15 PM' or 'FRBD' to a market key.
+
+    Captions such as 'Chart for Gali, Desawar, Ghaziabad and Faridabad' name
+    several markets and are not column headers, so they map to None.
+    """
+    if len(text) > 40:
+        return None
     letters = _letters(text)
     if not letters:
         return None
+    hits = set()
     for key, meta in config.MARKETS.items():
         for alias in meta["aliases"]:
-            if len(alias) >= 4 and alias in letters:
-                return key
-            if letters == alias:
-                return key
-    return None
+            if (len(alias) >= 4 and alias in letters) or letters == alias:
+                hits.add(key)
+    return hits.pop() if len(hits) == 1 else None
 
 
 def month_of_header(text: str) -> int | None:
@@ -138,10 +144,12 @@ def parse_html(html: str, *, year: int | None = None, month: int | None = None,
 
 
 def _parse_table(rows, year, month, market):
-    for hi, header in enumerate(rows[:4]):
-        mcols = {i: market_of_header(c) for i, c in enumerate(header)}
+    for hi, header in enumerate(rows[:6]):
+        # column 0 is the date column, never a market
+        mcols = {i: market_of_header(c) for i, c in enumerate(header) if i > 0}
         mcols = {i: mk for i, mk in mcols.items() if mk}
-        if mcols and (market is None or market in mcols.values()):
+        enough = len(set(mcols.values())) >= 2 if market is None else market in mcols.values()
+        if mcols and enough:
             if market:
                 mcols = {i: mk for i, mk in mcols.items() if mk == market}
             return _parse_market_columns(rows[hi + 1:], mcols, year, month)
@@ -233,43 +241,100 @@ def _months_between(start: dt.date, end: dt.date):
             y, m = y + 1, 1
 
 
+def sanitize(found: list[tuple[str, dt.date, int]], now: dt.datetime) -> tuple[list, dict]:
+    """Drop values that cannot be real results.
+
+    * a column whose values mostly equal the day of month is a mis-read date column
+    * a result dated in the future, or before its declaration time today
+    """
+    dropped = {"day_number_columns": 0, "not_declared_yet": 0}
+    by_market: dict[str, list] = defaultdict(list)
+    for t in found:
+        by_market[t[0]].append(t)
+    out = []
+    for mk, items in by_market.items():
+        same_as_day = sum(1 for _, d, v in items if v == d.day)
+        if len(items) >= 5 and same_as_day >= 0.5 * len(items):
+            dropped["day_number_columns"] += len(items)
+            continue
+        for t in items:
+            if now < config.result_datetime(mk, t[1]):
+                dropped["not_declared_yet"] += 1
+            else:
+                out.append(t)
+    return out, dropped
+
+
+def _dump_html(src_id: str, html: str) -> None:
+    if os.environ.get("SATTA_DUMP_HTML") == "1":
+        d = storage.raw_dir() / "html"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{src_id}.html").write_text(html, encoding="utf-8")
+
+
 def fetch_all(start: dt.date, end: dt.date, sources: list[dict] | None = None,
-              session: requests.Session | None = None) -> tuple[list[tuple], list[dict]]:
+              session: requests.Session | None = None,
+              now: dt.datetime | None = None) -> tuple[list[tuple], list[dict]]:
     """Fetch every source for [start, end]. Returns (triples, status)."""
     sources = sources or config.load_sources()
     session = session or requests.Session()
+    now = now or config.now_ist()
     triples: list[tuple] = []
     status: list[dict] = []
     for src in sources:
         got = 0
         errors = 0
+        dropped = Counter()
+        pages = []
         if src["kind"] == "monthly":
             for y, m in _months_between(start, end):
-                url = src["url"].format(year=y, mm=f"{m:02d}", m=m,
-                                        month_name=calendar.month_name[m])
-                html = _get(url, session)
-                if html is None:
-                    errors += 1
-                    if errors >= 2 and got == 0:
-                        break  # site down or blocked: don't hammer it
-                    continue
-                for mk, d, v in parse_html(html, year=y, month=m, market=src.get("market")):
-                    if start <= d <= end and d.year == y and d.month == m:
-                        triples.append((src["id"], src.get("priority", 9), mk, d, v))
-                        got += 1
+                pages.append(((y, m), src["url"].format(year=y, mm=f"{m:02d}", m=m,
+                                                         month_name=calendar.month_name[m])))
         else:
-            for y in range(start.year, end.year + 1):
-                html = _get(src["url"].format(year=y), session)
-                if html is None:
-                    errors += 1
-                    continue
-                for mk, d, v in parse_html(html, year=y, market=src.get("market")):
-                    if start <= d <= end:
-                        triples.append((src["id"], src.get("priority", 9), mk, d, v))
-                        got += 1
-        status.append({"source": src["id"], "values": got, "failed_pages": errors})
-        log.info("source %s: %d values, %d failed pages", src["id"], got, errors)
+            pages = [((y, None), src["url"].format(year=y)) for y in range(start.year, end.year + 1)]
+        for (y, m), url in pages:
+            html = _get(url, session)
+            if html is None:
+                errors += 1
+                if errors >= 2 and got == 0:
+                    break  # site down or blocked: don't hammer it
+                continue
+            _dump_html(src["id"], html)
+            found = [(mk, d, v) for mk, d, v in parse_html(html, year=y, month=m, market=src.get("market"))
+                     if start <= d <= end and d.year == y and (m is None or d.month == m)]
+            found, drop = sanitize(found, now)
+            dropped.update(drop)
+            for mk, d, v in found:
+                triples.append((src["id"], src.get("priority", 9), mk, d, v))
+                got += 1
+        status.append({"source": src["id"], "values": got, "failed_pages": errors,
+                       "dropped": dict(dropped)})
+        log.info("source %s: %d values, %d failed pages, dropped %s", src["id"], got, errors, dict(dropped))
     return triples, status
+
+
+def agreement(triples: list[tuple]) -> list[dict]:
+    """How often two sources agree on the same (market, date), and with a ±1 day shift.
+
+    A pair that agrees much better when shifted has one chart off by a day.
+    """
+    series: dict[tuple[str, str], dict[dt.date, int]] = defaultdict(dict)
+    for sid, _, mk, d, v in triples:
+        series[(sid, mk)][d] = v
+    out = []
+    keys = sorted(series)
+    for i, (sa, ma) in enumerate(keys):
+        for sb, mb in keys[i + 1:]:
+            if ma != mb:
+                continue
+            a, b = series[(sa, ma)], series[(sb, mb)]
+            row = {"market": ma, "a": sa, "b": sb}
+            for name, shift in (("same_day", 0), ("b_is_next_day", 1), ("b_is_prev_day", -1)):
+                common = [d for d in a if d + dt.timedelta(days=shift) in b]
+                agree = sum(1 for d in common if a[d] == b[d + dt.timedelta(days=shift)])
+                row[name] = {"n": len(common), "agree": agree}
+            out.append(row)
+    return out
 
 
 def merge(existing: list[dict], triples: list[tuple], fetched_at: str) -> tuple[list[dict], list[dict], int]:
@@ -302,17 +367,22 @@ def sync(now: dt.datetime | None = None, full: bool = False) -> dict:
     now = now or config.now_ist()
     today = now.astimezone(config.IST).date()
     existing = storage.load_result_rows()
-    if full or not existing:
+    per_market = Counter(r["market"] for r in existing)
+    expected = (today - config.HISTORY_START).days * 0.8
+    if full or not existing or any(per_market[m] < expected for m in config.MARKET_KEYS):
+        # first run, or some market still has gaps: fetch everything again
         start = config.HISTORY_START
     else:
         # re-read the last ~40 days: catches late results and corrections
         start = max(config.HISTORY_START, today - dt.timedelta(days=40))
-    triples, status = fetch_all(start, today)
+    triples, status = fetch_all(start, today, now=now)
+    storage.save_raw(triples)
     rows, conflicts, changed = merge(existing, triples, now.isoformat(timespec="seconds"))
     if changed:
         storage.save_result_rows(rows)
     return {"from": start.isoformat(), "to": today.isoformat(), "new_or_changed": changed,
-            "sources": status, "conflicts": conflicts[-50:], "total_rows": len(rows)}
+            "sources": status, "agreement": agreement(triples),
+            "conflicts": conflicts[-50:], "total_rows": len(rows)}
 
 
 def import_csv(path: str) -> int:

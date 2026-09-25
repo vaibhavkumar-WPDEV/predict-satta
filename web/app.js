@@ -100,9 +100,10 @@ function predictionCard(m, hero) {
     <h3>Proof</h3>
     <div class="muted" style="font-size:12px">Locked: ${fmtTime(p.created_at)} · ${p.trained_on} results par trained</div>
     <div class="mono muted">SHA-256 ${esc(p.hash)}</div>
-    <h3>Ab tak ki accuracy</h3>
+    <h3>Kitna close? (model ka dawa vs asli test)</h3>
     <div class="row">
-      <span class="pill info">Backtest top-10: ${pct(bt.hit10?.rate)} (random 10%) ${pv(bt.hit10?.p_value)}</span>
+      <span class="pill warn">Model ka dawa: top-10 me aane ka ${pct(p.top10.reduce((s, x) => s + x[1], 0))}, #1 number ka ${pct(p.top10[0][1], 2)}</span>
+      <span class="pill info">Asli test (bina result dekhe, ${bt.n || 0} din): top-10 ${pct(bt.hit10?.rate)}, exact ${pct(bt.hit1?.rate)} ${pv(bt.hit10?.p_value)}</span>
       <span class="pill info">Live top-10: ${lv.n ? pct(lv.hit10.rate) + ` (${lv.hit10.hits}/${lv.n})` : "abhi data nahi"}</span>
     </div>
   </div>`;
@@ -207,6 +208,8 @@ function renderTest() {
       <p class="muted">Har din ki prediction sirf us din se pehle ke data se bani (future leak nahi) — bilkul live jaisa.</p>
       ${summaryStats(bt.last7, "Pichle 7 din")}
       ${summaryStats(bt.last30, "Pichle 30 din")}
+      ${summaryStats(bt.last100, "Pichle 100 din")}
+      ${summaryStats(bt.last200, "Pichle 200 din")}
       ${summaryStats(bt.all, "Poora itihaas")}
     </div>
     <div class="card table-wrap"><table>

@@ -68,6 +68,45 @@ def test_single_market_page_ignores_other_columns():
     assert got == [("faridabad", dt.date(2026, 2, 15), 20)]
 
 
+CAPTION_FIRST = """
+<table>
+  <tr><th colspan="5">Satta King Chart of March 2026 for Gali, Desawar, Ghaziabad and Faridabad</th></tr>
+  <tr><th>DATE</th><th>DSWR</th><th>FRBD</th><th>GZBD</th><th>GALI</th></tr>
+  <tr><td>01</td><td>12</td><td>34</td><td>56</td><td>78</td></tr>
+</table>
+"""
+
+
+def test_caption_row_is_not_a_header():
+    got = scraper.parse_html(CAPTION_FIRST, year=2026, month=3)
+    assert sorted(got) == sorted([
+        ("disawar", dt.date(2026, 3, 1), 12), ("faridabad", dt.date(2026, 3, 1), 34),
+        ("ghaziabad", dt.date(2026, 3, 1), 56), ("gali", dt.date(2026, 3, 1), 78)])
+
+
+def test_sanitize_drops_day_numbers_and_undeclared_results():
+    from satta import config
+
+    now = dt.datetime(2026, 3, 10, 9, 0, tzinfo=config.IST)
+    days = [("disawar", dt.date(2026, 3, d), d) for d in range(1, 9)]
+    today_frbd = ("faridabad", dt.date(2026, 3, 10), 55)   # declared 18:15, it is 09:00
+    today_dswr = ("disawar", dt.date(2026, 3, 10), 44)     # declared 05:00, fine
+    ok = ("faridabad", dt.date(2026, 3, 9), 21)
+    kept, dropped = scraper.sanitize(days + [today_frbd, ok], now)
+    assert kept == [ok]
+    assert dropped == {"day_number_columns": 8, "not_declared_yet": 1}
+    kept, _ = scraper.sanitize([today_dswr, ok], now)
+    assert today_dswr in kept
+
+
+def test_agreement_detects_one_day_shift():
+    a = [("a", 1, "faridabad", dt.date(2026, 1, d), (d * 7) % 100) for d in range(1, 21)]
+    b = [("b", 2, "faridabad", dt.date(2026, 1, d + 1), (d * 7) % 100) for d in range(1, 21)]
+    row = scraper.agreement(a + b)[0]
+    assert row["same_day"]["agree"] < 3
+    assert row["b_is_next_day"]["agree"] == 20
+
+
 def test_merge_majority_vote():
     d = dt.date(2026, 5, 1)
     triples = [("a", 1, "faridabad", d, 11), ("b", 2, "faridabad", d, 22), ("c", 3, "faridabad", d, 22)]

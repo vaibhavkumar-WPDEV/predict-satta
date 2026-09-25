@@ -36,6 +36,9 @@ jobs:
 
       - name: Fetch -> check -> learn -> predict -> lock
         run: python -m satta cycle
+        env:
+          # keep a copy of each source page in data/raw/html to check the parser
+          SATTA_DUMP_HTML: "1"
 
       - name: Commit new results and locked predictions
         run: |

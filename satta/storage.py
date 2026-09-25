@@ -31,6 +31,24 @@ def predictions_path() -> Path:
     return _dir() / "predictions.jsonl"
 
 
+def raw_dir() -> Path:
+    d = _dir() / "raw"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def save_raw(triples: list[tuple]) -> None:
+    """data/raw/<source>.csv: exactly what each website said in the last fetch."""
+    by_source: dict[str, list] = {}
+    for sid, _, mk, d, v in triples:
+        by_source.setdefault(sid, []).append((d.isoformat(), mk, v))
+    for sid, items in by_source.items():
+        with (raw_dir() / f"{sid}.csv").open("w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["date", "market", "value"])
+            w.writerows(sorted(items))
+
+
 def cache_dir() -> Path:
     d = _dir() / "cache"
     d.mkdir(parents=True, exist_ok=True)

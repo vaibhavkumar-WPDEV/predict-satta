@@ -113,7 +113,7 @@ def _experts_table(rep: Replay) -> list[dict]:
     return out
 
 
-def _backtest(rep: Replay, rows: int = 60) -> dict:
+def _backtest(rep: Replay, rows: int = 200) -> dict:
     scores = [score(s.mix, s.actual) for s in rep.steps]
     table = []
     for s, sc in list(zip(rep.steps, scores))[-rows:][::-1]:
@@ -126,6 +126,8 @@ def _backtest(rep: Replay, rows: int = 60) -> dict:
         })
     return {
         "all": _clean(summarize(scores)),
+        "last200": _clean(summarize(scores[-200:])),
+        "last100": _clean(summarize(scores[-100:])),
         "last30": _clean(summarize(scores[-30:])),
         "last7": _clean(summarize(scores[-7:])),
         "rows": table,
