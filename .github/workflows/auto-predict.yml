@@ -1,0 +1,45 @@
+name: Auto predict
+
+# Every hour: fetch new results, score the locked predictions, re-learn the
+# model weights and lock the next predictions. Each commit is a public,
+# timestamped proof that a prediction existed before its result.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-predict
+  cancel-in-progress: false
+
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Fetch -> check -> learn -> predict -> lock
+        run: python -m satta cycle
+
+      - name: Commit new results and locked predictions
+        run: |
+          git config user.name "satta-bot"
+          git config user.email "satta-bot@users.noreply.github.com"
+          git add -A data/
+          if git diff --cached --quiet -- data/results.csv data/predictions.jsonl; then
+            echo "No new result or prediction."
+            exit 0
+          fi
+          git commit -m "auto: results + locked predictions $(TZ=Asia/Kolkata date '+%Y-%m-%d %H:%M IST')"
+          git push

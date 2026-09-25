@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Satta Predictor</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">SP</span>
+      <div>
+        <h1>Satta Predictor</h1>
+        <p class="muted" id="meta">loading…</p>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="refresh" class="btn" title="Abhi data fetch karo, check karo, seekho aur predict karo">Abhi Update Karo</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="today" class="active">Aaj ki Prediction</button>
+    <button data-tab="proof">Proof (Live)</button>
+    <button data-tab="test">7-Din Test</button>
+    <button data-tab="learning">Learning</button>
+    <button data-tab="formulas">Formule</button>
+    <button data-tab="theorems">Theorems</button>
+    <button data-tab="chart">Result Chart</button>
+    <button data-tab="help">Kaise Use Kare</button>
+  </nav>
+
+  <div class="market-bar" id="marketBar"></div>
+
+  <main>
+    <section id="tab-today" class="tab active"></section>
+    <section id="tab-proof" class="tab"></section>
+    <section id="tab-test" class="tab"></section>
+    <section id="tab-learning" class="tab"></section>
+    <section id="tab-formulas" class="tab"></section>
+    <section id="tab-theorems" class="tab"></section>
+    <section id="tab-chart" class="tab"></section>
+    <section id="tab-help" class="tab">
+      <div class="card">
+        <h2>Kaise use kare</h2>
+        <ol class="steps">
+          <li><b>Kuch feed nahi karna.</b> Server chalte hi tool khud result websites se Jan 2026 se aaj tak ka data laata hai, aur har 15 minute me naya result check karta hai.</li>
+          <li><b>Aaj ki Prediction</b> tab: har market ki agle result ki Top-10 jodi, Andar/Bahar top-3 aur tool ke khud ke formule. Har prediction result se <i>pehle</i> lock hoti hai, uska SHA-256 hash aur time likha hota hai.</li>
+          <li><b>Proof (Live)</b> tab: result aane ke baad tool khud milata hai — HIT/MISS, actual number ka rank, aur "kyu galat hua / kya seekha".</li>
+          <li><b>7-Din Test</b>: pichle 7/30/saare din ka walk-forward test — har din sirf us din se pehle ka data use hua, jaise live me hota.</li>
+          <li><b>Learning</b>: 20 models ke weights har result ke baad badalte hain (Fixed-Share Hedge). Jo model sahi nikalta hai uska bharosa badhta hai.</li>
+          <li><b>Formule</b> aur <b>Theorems</b>: tool ke khud dhoondhe formule aur statistical findings, unseen data par test karke.</li>
+        </ol>
+        <h3>Accuracy kaise padhein</h3>
+        <p>Har number ke liye random chance: exact = 1%, top-10 = 10%, Andar/Bahar top-3 = 30%. Tool apni accuracy hamesha isi se compare karta hai. <b>p-value</b> chhota (&lt; 0.05) ho tabhi maana jaye ki tool chance se behtar hai; warna result sirf kismat hai.</p>
+        <h3>Commands</h3>
+<pre>pip install -r requirements.txt
+python -m satta serve                 # dashboard: http://localhost:8000
+python -m satta cycle                 # ek baar: fetch → check → seekho → predict
+python -m satta backtest --days 7     # Faridabad ka 7 din ka test
+python -m satta table                 # Jan 2026 se aaj tak ka table
+python -m satta verify                # predictions ka hash proof check</pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="muted">
+    Numbers statistical estimates hain, guarantee nahi. Tool apni asli accuracy random chance se compare karke dikhata hai.
+  </footer>
+</body>
+</html>
