@@ -554,7 +554,7 @@ class FormulaDigit(Expert):
 
 
 def default_experts() -> list[Expert]:
-    from .advanced import GeneticFormula, NeuralNet, UniversalCTW
+    from .advanced import GeneticFormula, HotPool, NeuralNet, UniversalCTW
 
     return [
         Uniform(),
@@ -585,4 +585,6 @@ def default_experts() -> list[Expert]:
         UniversalCTW(),
         NeuralNet(),
         GeneticFormula(),
+        HotPool(7, 0.85),
+        HotPool(3, 0.8),
     ]

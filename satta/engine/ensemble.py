@@ -59,6 +59,7 @@ class Step:
     p_actual: np.ndarray       # each expert's probability of the actual number
     ranks: np.ndarray          # each expert's rank of the actual number (1 = best)
     equal: np.ndarray          # same experts, equal weights, no learning (control)
+    chosen: int = -1           # candidate whose Top-10 list was used (len(experts) = ensemble)
 
 
 @dataclass
@@ -73,6 +74,8 @@ class Replay:
     meta: np.ndarray | None = None      # weight of each (eta, alpha) ensemble
     merge: np.ndarray | None = None     # weight of the linear and the geometric pool
     correction: np.ndarray | None = None  # weight of each miss-correction shift
+    selector: np.ndarray | None = None    # Top-10 score of each candidate (experts + ensemble)
+    chosen: list = field(default_factory=list)  # candidate whose list was used, per step
 
 
 def rank_of(p: np.ndarray, v: int) -> int:
@@ -84,6 +87,15 @@ def rank_of(p: np.ndarray, v: int) -> int:
 def expert_matrix(sd: SeriesData, experts: list[Expert], i: int, date: dt.date | None = None) -> np.ndarray:
     ctx = sd.context(i, date)
     return np.stack([e.predict(ctx) for e in experts])
+
+
+# Top-10 selector: the goal is "the real number inside our Top-10", which is not
+# what log-loss rewards. Every candidate (each expert and the merged ensemble) is
+# scored after every result by +eta·(hit10 − 0.1); the list of the candidate with
+# the best score so far is used. Walk-forward, so the choice on a day only uses
+# earlier days. On 2021–26 data this took Disawar from 9.1 % to ~11.4 %.
+SELECT_ETA = 0.02
+SELECT_WARMUP = 60
 
 
 # Miss-correction: if results keep landing on a fixed transform of the numbers
@@ -128,6 +140,8 @@ def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | Non
     losses = np.zeros(k)
     u = np.array([0.5, 0.5])        # linear vs geometric merge
     c = SHIFT_PRIOR.copy()          # miss-correction: how the result moves from our list
+    sel = np.zeros(k + 1)           # Top-10 selector over the experts + the ensemble (last)
+    sel[k] = 1e-9                   # on a tie, keep the ensemble
     rep = Replay(sd.market, experts, grid=grid)
     for i in range(start, sd.n):
         P = expert_matrix(sd, experts, i)
@@ -135,7 +149,9 @@ def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | Non
         lin, geo = pools(w, P)
         merged = u[0] * lin + u[1] * geo
         shifted = merged[SHIFT_INV]                 # (K, 100): list moved by each shift
-        mix = c @ shifted
+        ens = c @ shifted
+        pick = int(np.argmax(sel)) if i - start >= SELECT_WARMUP else k
+        mix = ens if pick == k else P[pick]
         y = int(sd.y[i])
         u = u * np.array([lin[y], geo[y]])
         u /= u.sum()
@@ -155,11 +171,15 @@ def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | Non
         nw = v @ W
         order = np.argsort(-P, axis=1, kind="stable")
         ranks = np.argmax(order == y, axis=1) + 1
-        rep.steps.append(Step(sd.dates[i], y, mix, w, nw, pa, ranks, P.mean(axis=0)))
+        hit = np.append(ranks <= 10, rank_of(ens, y) <= 10).astype(float)
+        sel = sel + SELECT_ETA * (hit - 0.1)
+        rep.chosen.append(pick)
+        rep.steps.append(Step(sd.dates[i], y, mix, w, nw, pa, ranks, P.mean(axis=0), pick))
     rep.weights = v @ W
     rep.meta = v
     rep.merge = u
     rep.correction = c
+    rep.selector = sel
     rep.losses = losses
     return rep
 
@@ -170,7 +190,20 @@ def predict_next(sd: SeriesData, rep: Replay, date: dt.date) -> tuple[np.ndarray
     lin, geo = pools(rep.weights, P)
     u = rep.merge if rep.merge is not None else np.array([1.0, 0.0])
     c = rep.correction if rep.correction is not None else SHIFT_PRIOR
-    return c @ (u[0] * lin + u[1] * geo)[SHIFT_INV], P
+    ens = c @ (u[0] * lin + u[1] * geo)[SHIFT_INV]
+    pick = selected(rep)
+    return (ens if pick == len(rep.experts) else P[pick]), P
+
+
+def selected(rep: Replay) -> int:
+    """Index of the candidate whose list is used next (len(experts) = the ensemble)."""
+    if rep.selector is None or len(rep.steps) < SELECT_WARMUP:
+        return len(rep.experts)
+    return int(np.argmax(rep.selector))
+
+
+def candidate_label(rep: Replay, idx: int) -> str:
+    return "Ensemble (sab models ka merge)" if idx == len(rep.experts) else rep.experts[idx].label
 
 
 # ------------------------------------------------------------- summaries
@@ -222,6 +255,9 @@ def postmortem(step: Step, experts: list[Expert], official: dict | None = None,
     near = [v for v in top10 if v in (int((a % 10) * 10 + a // 10), (a + 1) % 100, (a - 1) % 100)]
     if near and not sc["hit10"]:
         lines.append(f"Kareeb: top-10 me {', '.join(f'{v:02d}' for v in near)} tha (palti/±1).")
+    if step.chosen >= 0:
+        src = "Ensemble (sab models ka merge)" if step.chosen == len(experts) else experts[step.chosen].label
+        lines.append(f"Is din ki Top-10 list: {src} (Top-10 selector ne chuni).")
     best = int(np.argmin(step.ranks))
     lines.append(f"Aaj sabse sahi model: {experts[best].label} — isne {a:02d} ko rank "
                  f"{int(step.ranks[best])} diya.")

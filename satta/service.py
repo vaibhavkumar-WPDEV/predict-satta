@@ -29,8 +29,8 @@ import numpy as np
 from . import config, scraper, storage
 from .engine import formulas, theorems
 from .engine.base import SeriesData, andar_bahar
-from .engine.ensemble import (SHIFTS, Replay, digit_top, postmortem, predict_next, rank_of, replay,
-                              score, summarize, top_list)
+from .engine.ensemble import (SELECT_ETA, SHIFTS, Replay, candidate_label, digit_top, postmortem,
+                              predict_next, rank_of, replay, score, selected, summarize, top_list)
 
 log = logging.getLogger("satta.service")
 _lock = threading.Lock()
@@ -107,6 +107,7 @@ def make_prediction(sd: SeriesData, rep: Replay, date: dt.date, now: dt.datetime
         "bahar": digit_top(ab),
         "dist": [round(float(x), 5) for x in mix],
         "experts": [[rep.experts[i].label, round(float(rep.weights[i]), 4)] for i in order],
+        "model": candidate_label(rep, selected(rep)),
     }
     if formula_report and formula_report.get("ready"):
         pred["formulas"] = [f"{f['formula']} → {f['value']:02d}"
@@ -216,12 +217,21 @@ def _progress(rep: Replay, window: int = 50) -> dict | None:
 
     stride = max(1, len(steps) // 300)
     idx = list(range(w - 1, len(steps), stride))
+    selector = None
+    if rep.selector is not None and steps:
+        n = len(steps)
+        rates = rep.selector / SELECT_ETA / n + 0.1   # score = eta·(hits − 0.1·n)
+        top = np.argsort(-rep.selector)[:6]
+        selector = {"chosen": candidate_label(rep, selected(rep)),
+                    "ranking": [{"label": candidate_label(rep, int(j)), "hit10_rate": _r(float(rates[j]))}
+                                for j in top]}
     tuning = []
     if rep.meta is not None:
         tuning = sorted(({"eta": e, "alpha": a, "weight": _r(float(v))}
                          for (e, a), v in zip(rep.grid, rep.meta)), key=lambda r: -r["weight"])
     return {
         "window": w,
+        "selector": selector,
         "tuning": tuning,
         "merge": ({"linear": _r(float(rep.merge[0])), "geometric": _r(float(rep.merge[1]))}
                   if rep.merge is not None else None),

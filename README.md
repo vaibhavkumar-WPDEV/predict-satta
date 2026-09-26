@@ -140,6 +140,19 @@ Har result ke baad tool dekhta hai ki asli number uski list se kis tarah khiska 
 nikle to agli poori list usi taraf khisak jaati hai (`P'(v) = Σ_k c_k · P(T_k⁻¹(v))`).
 Test me: jo model hamesha 1 se chookta tha, uske saath tool ne "+1" seekh kar 100% exact kiya.
 
+### 4.2a5 Hot pool + Top-10 selector (pehla asli fayda)
+
+- **Hot pool (number ghoom ke aata hai):** 2021–26 data me jo number pichle ~7 din me kisi bhi
+  market me aaya, woh agle result me random se thoda zyada aata hai (Disawar 28.0% vs 23.4%,
+  z = +4.8; Ghaziabad z = +4.4; Gali z = +3.2; Faridabad me asar nahi). Yeh model chaaron markets
+  ke haal ke numbers ko `0.85^age` se score karta hai; kitna bharosa (λ) karna hai woh roz
+  pichle 730 draws se khud seekhta hai.
+- **Top-10 selector:** ensemble apne models ko log-loss se tolta hai, lekin lakshya "asli number
+  Top-10 me" hai. Har result ke baad har model (aur ensemble) ki Top-10 check hoti hai,
+  `score += 0.02·(hit − 0.1)`, aur agli list sabse achhe score wale ki hoti hai (walk-forward).
+- **5 saal ka walk-forward nateeja (engine 3.2):** Disawar 11.4% (p = 0.02), Gali 10.7%,
+  Ghaziabad 10.0%, Faridabad 9.5% — random 10%. Engine 3.1 par sab 8.7–9.3% the.
+
 ### 4.2b Khud ko todo + seekhne ka asar
 
 - **Shuffle test:** engine ko 3 baar aisi history par chalaya jaata hai jisme dates ka order

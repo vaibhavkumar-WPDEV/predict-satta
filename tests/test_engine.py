@@ -166,6 +166,31 @@ def test_miss_correction_learns_a_systematic_shift():
     assert s["hit1"]["rate"] == 1.0
 
 
+def test_top10_selector_uses_the_list_that_hits():
+    """An expert whose list always holds the result but whose probabilities are nearly flat:
+    log-loss hardly rewards it, the Top-10 selector does."""
+    from satta.engine.experts import Expert, Uniform
+
+    class NearlyFlat(Expert):
+        name = "nearly_flat"
+
+        def predict(self, ctx):
+            p = np.full(100, 1.0)
+            y = int(ctx.sd.y[ctx.i])  # test-only oracle: the result is always in its top 10
+            for v in range(y, y + 10):
+                p[v % 100] = 1.02
+            return p / p.sum()
+
+    sd = SeriesData(table_from(synthetic_rows(200, seed=12)), "faridabad")
+    rep = replay(sd, experts=[Uniform(), NearlyFlat()])
+    s = summarize([score(x.mix, x.actual) for x in rep.steps[-80:]])
+    assert s["hit10"]["rate"] == 1.0
+    # the flat-but-right expert scores far above the uniform one; on a tie with
+    # the ensemble (which also learned it) the ensemble's list is kept
+    assert rep.selector[1] > rep.selector[0] + 1
+    assert rep.chosen[-1] in (1, 2)
+
+
 def test_formula_report_finds_planted_formula():
     sd = SeriesData(table_from(synthetic_rows(200, seed=5, planted=True)), "faridabad")
     rep = formulas.report(sd, sd.features_for(dt.date(2026, 7, 20), sd.n))

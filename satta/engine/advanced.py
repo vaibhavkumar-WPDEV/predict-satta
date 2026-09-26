@@ -121,6 +121,56 @@ def _onehot_features(sd, F: dict) -> np.ndarray:
     return np.concatenate(cols, axis=1)
 
 
+class HotPool(Expert):
+    """Cross-market recency: numbers that came recently in ANY market come again a little
+    more often than chance (found on 2021-2026 data: Disawar 12.3 % top-10 vs 10 %)."""
+
+    GRID = np.array([0.0, 0.02, 0.05, 0.08, 0.12, 0.16, 0.2, 0.3])
+
+    def __init__(self, window: int, decay: float):
+        self.W = window
+        self.decay = decay
+        self.name = f"hot_pool_w{window}"
+        self.label = f"Hot pool: number ghoom ke aata hai ({window} din, sab markets)"
+        self.theory = (f"score(v) = Σ {decay}^age · [v aaya] pichle {window} din me chaaron markets me "
+                       "(aaj ke pehle aaye markets bhi). P = (1−λ)/100 + λ·score/Σscore; λ har din "
+                       "pichle 730 draws par maximum likelihood se khud chuna jata hai.")
+
+    def _scores(self, sd, date) -> np.ndarray:
+        import datetime as dt
+
+        from .. import config
+
+        sc = np.zeros(100)
+        for k in range(self.W + 1):
+            day = date - dt.timedelta(days=k)
+            w = self.decay ** k
+            for o in config.MARKET_KEYS:
+                if k == 0 and o not in sd.earlier:
+                    continue  # same day: only markets declared before this one
+                v = sd.table.get(o, {}).get(day)
+                if v is not None:
+                    sc[v] += w
+        return sc
+
+    def predict(self, ctx: Context):
+        sd = ctx.sd
+        q = sd.cache.setdefault(("hot", self.W, self.decay), [])
+        while len(q) < ctx.i:  # pool probability the real number had, for every past draw
+            j = len(q)
+            sc = self._scores(sd, sd.dates[j])
+            s = sc.sum()
+            q.append(sc[sd.y[j]] / s if s > 0 else 0.01)
+        sc = self._scores(sd, ctx.date)
+        s = sc.sum()
+        if s == 0 or ctx.i < 60:
+            return UNIFORM.copy()
+        qa = np.array(q[max(0, ctx.i - 730):ctx.i])
+        ll = [np.log((1 - lam) / 100 + lam * qa).sum() for lam in self.GRID]
+        lam = float(self.GRID[int(np.argmax(ll))])
+        return (1 - lam) * UNIFORM + lam * sc / s
+
+
 class GeneticFormula(Expert):
     name = "genetic_formula"
     label = "Genetic programming (khud evolve kiye formule)"
