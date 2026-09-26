@@ -22,6 +22,7 @@ import json
 import logging
 import math
 import threading
+from pathlib import Path
 
 import numpy as np
 
@@ -59,6 +60,17 @@ def closed_days(sd: SeriesData) -> list[str]:
         if len(cands) >= 3 and missing >= 0.8 * len(cands):
             out.append(kind)
     return out
+
+
+def _code_hash() -> str:
+    """Fingerprint of the engine's source, so any code change recomputes everything."""
+    h = hashlib.sha256()
+    for path in sorted(Path(__file__).resolve().parent.rglob("*.py")):
+        h.update(path.read_bytes())
+    return h.hexdigest()[:16]
+
+
+CODE_HASH = _code_hash()
 
 
 def next_target_date(market: str, sd: SeriesData, now: dt.datetime) -> dt.date:
@@ -438,7 +450,8 @@ def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = T
         preds = storage.load_predictions()
         thash = table_hash(table)
         prev = load_dashboard() or {}
-        same = prev.get("engine") == config.ENGINE_VERSION and prev.get("data_hash") == thash
+        same = (prev.get("engine") == config.ENGINE_VERSION and prev.get("data_hash") == thash
+                and prev.get("code_hash") == CODE_HASH)
         if same and _nothing_to_lock(table, preds, now):
             return _refresh_only(prev, sync_info, now)
         markets, created = {}, []
@@ -459,6 +472,7 @@ def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = T
             "generated_at": now.astimezone(config.IST).isoformat(timespec="seconds"),
             "engine": config.ENGINE_VERSION,
             "data_hash": thash,
+            "code_hash": CODE_HASH,
             "primary": config.PRIMARY_MARKET,
             "history_start": config.HISTORY_START.isoformat(),
             "sync": sync_info,
