@@ -35,8 +35,11 @@ def test_no_future_leak():
     t2 = table_from(rows)
     cutoff = dt.date(2026, 1, 1) + dt.timedelta(days=80)
     for m in t2:
+        # Disawar is declared before Faridabad on the same day, so its cutoff-day
+        # result may be used; everything from Faridabad's cutoff draw on may not.
+        first_bad = cutoff + dt.timedelta(days=1) if m == "disawar" else cutoff
         for d in t2[m]:
-            if d >= cutoff:
+            if d >= first_bad:
                 t2[m][d] = (t2[m][d] + 50) % 100
     r1 = replay(SeriesData(t1, "faridabad"))
     r2 = replay(SeriesData(t2, "faridabad"))
@@ -117,6 +120,52 @@ def test_neural_net_learns_cross_market_digit_rule():
     assert hits / (sd.n - 200) > 0.8
 
 
+def test_same_day_earlier_market_is_a_feature():
+    tab = table_from(synthetic_rows(120, seed=4))
+    sd = SeriesData(tab, "ghaziabad")
+    assert sd.earlier == ["disawar", "faridabad"]
+    d = sd.dates[50]
+    assert sd.F["faridabad@0"][50] == tab["faridabad"][d]
+    assert sd.F["disawar@0"][50] == tab["disawar"][d]
+    assert "gali@0" not in sd.F  # Gali is declared after Ghaziabad
+
+
+def test_same_day_pattern_is_learned():
+    """Faridabad = palti of the same morning's Disawar on 40 % of days."""
+    import random
+
+    rng = random.Random(8)
+    tab = table_from(synthetic_rows(260, seed=8))
+    for d in tab["faridabad"]:
+        if d in tab["disawar"] and rng.random() < 0.4:
+            x = tab["disawar"][d]
+            tab["faridabad"][d] = (x % 10) * 10 + x // 10
+    rep = replay(SeriesData(tab, "faridabad"))
+    s = summarize([score(x.mix, x.actual) for x in rep.steps[-100:]])
+    assert s["hit1"]["rate"] > 0.25
+
+
+def test_miss_correction_learns_a_systematic_shift():
+    """An expert that is always one below the truth: the correction layer learns '+1'."""
+    from satta.engine.experts import Expert
+
+    class OneBelow(Expert):
+        name = "one_below"
+
+        def predict(self, ctx):
+            p = np.full(100, 0.1 / 99)
+            p[(int(ctx.sd.y[ctx.i]) - 1) % 100] = 0.9  # test-only oracle, shifted by -1
+            return p
+
+    sd = SeriesData(table_from(synthetic_rows(120, seed=6)), "faridabad")
+    rep = replay(sd, experts=[OneBelow()])
+    from satta.engine.ensemble import SHIFTS
+
+    assert list(SHIFTS)[int(np.argmax(rep.correction))] == "+1"
+    s = summarize([score(x.mix, x.actual) for x in rep.steps[-40:]])
+    assert s["hit1"]["rate"] == 1.0
+
+
 def test_formula_report_finds_planted_formula():
     sd = SeriesData(table_from(synthetic_rows(200, seed=5, planted=True)), "faridabad")
     rep = formulas.report(sd, sd.features_for(dt.date(2026, 7, 20), sd.n))
@@ -128,5 +177,5 @@ def test_formula_report_finds_planted_formula():
 def test_theorems_flag_cross_market_only_when_real():
     sd = SeriesData(table_from(synthetic_rows(260, seed=5, planted=True)), "faridabad")
     f = {t["id"]: t for t in theorems.findings(sd)}
-    assert f["T8GA"]["pattern"] is True
+    assert f["T8GAA"]["pattern"] is True
     assert f["T1"]["pattern"] is False

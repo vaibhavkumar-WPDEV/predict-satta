@@ -28,8 +28,8 @@ import numpy as np
 from . import config, scraper, storage
 from .engine import formulas, theorems
 from .engine.base import SeriesData, andar_bahar
-from .engine.ensemble import (Replay, digit_top, postmortem, predict_next, rank_of, replay, score,
-                              summarize, top_list)
+from .engine.ensemble import (SHIFTS, Replay, digit_top, postmortem, predict_next, rank_of, replay,
+                              score, summarize, top_list)
 
 log = logging.getLogger("satta.service")
 _lock = threading.Lock()
@@ -213,6 +213,9 @@ def _progress(rep: Replay, window: int = 50) -> dict | None:
         "tuning": tuning,
         "merge": ({"linear": _r(float(rep.merge[0])), "geometric": _r(float(rep.merge[1]))}
                   if rep.merge is not None else None),
+        "correction": ([{"shift": name, "weight": _r(float(w))}
+                        for name, w in sorted(zip(SHIFTS, rep.correction), key=lambda x: -x[1])]
+                       if rep.correction is not None else None),
         "learned": _clean(summarize(learned)),
         "equal": _clean(summarize(equal)),
         "best_expert": {"label": rep.experts[best].label,
@@ -316,7 +319,7 @@ def table_hash(table: dict) -> str:
     return hashlib.sha256(json.dumps(items).encode()).hexdigest()[:16]
 
 
-def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=None):
+def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=None, closed=None):
     sd = SeriesData(table, market)
     meta = config.MARKETS[market]
     base = {"key": market, "name": meta["name"], "short": meta["short"],
@@ -331,13 +334,20 @@ def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=No
     fr = formulas.report(sd, sd.features_for(target, sd.n))
     new = None
     locked = next((p for p in preds if p["market"] == market and p["date"] == target.isoformat()), None)
-    if locked is None and lock_new:
+    ready, waiting, deadline = lock_status(table, sd, target, now, closed or closed_map(table))
+    if locked is None and lock_new and ready:
         new = make_prediction(sd, rep, target, now, fr)
         locked = new
+    wait_info = None
+    if locked is None:
+        wait_info = {"date": target.isoformat(), "deadline": deadline.isoformat(timespec="minutes"),
+                     "for": [config.MARKETS[o]["name"] for o in waiting],
+                     "for_times": [config.MARKETS[o]["result_time"] for o in waiting]}
     payload = {
         **base, "ready": True,
         "closed_days": closed_days(sd),
         "next": locked,
+        "waiting": wait_info,
         "backtest": _backtest(rep),
         "coverage": _coverage(rep),
         "live": None,  # filled by caller once new predictions are appended
@@ -352,12 +362,42 @@ def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=No
     return payload, (new, rep)
 
 
+LOCK_MARGIN = dt.timedelta(minutes=60)
+
+
+def closed_map(table: dict) -> dict[str, list[str]]:
+    return {m: closed_days(SeriesData(table, m)) for m in config.MARKET_KEYS}
+
+
+def lock_status(table: dict, sd: SeriesData, target: dt.date, now: dt.datetime,
+                closed: dict[str, list[str]]) -> tuple[bool, list[str], dt.datetime]:
+    """Is it time to lock the prediction for `target`?
+
+    A market's prediction waits for the same day's results of the markets declared
+    earlier that day (e.g. Faridabad waits for that morning's Disawar), so they can be
+    used. It never waits past LOCK_MARGIN before its own result time.
+    """
+    waiting = []
+    for o in sd.earlier:
+        if target in table.get(o, {}):
+            continue
+        if any(DAY_KINDS[k](target) for k in closed.get(o, [])):
+            continue  # that market is closed on this day
+        waiting.append(o)
+    deadline = config.result_datetime(sd.market, target) - LOCK_MARGIN
+    return (not waiting) or now >= deadline, waiting, deadline
+
+
 def _nothing_to_lock(table: dict, preds: list[dict], now: dt.datetime) -> bool:
-    """True when every market's next draw already has a locked prediction."""
+    """True when no market has a prediction that should be locked now."""
     have = {(p["market"], p["date"]) for p in preds}
+    closed = closed_map(table)
     for m in config.MARKET_KEYS:
         sd = SeriesData(table, m)
-        if sd.n >= MIN_DATA and (m, next_target_date(m, sd, now).isoformat()) not in have:
+        if sd.n < MIN_DATA:
+            continue
+        target = next_target_date(m, sd, now)
+        if (m, target.isoformat()) not in have and lock_status(table, sd, target, now, closed)[0]:
             return False
     return True
 
@@ -402,10 +442,11 @@ def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = T
         if same and _nothing_to_lock(table, preds, now):
             return _refresh_only(prev, sync_info, now)
         markets, created = {}, []
+        closed = closed_map(table)
         for m in config.MARKET_KEYS:
             old = (prev.get("markets") or {}).get(m) or {}
             payload, extra = _analyse_market(table, m, preds, now, lock_new,
-                                             old.get("selfbreak") if same else None)
+                                             old.get("selfbreak") if same else None, closed)
             if extra and extra[0] is not None:
                 storage.append_prediction(extra[0])
                 preds.append(extra[0])

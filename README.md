@@ -124,6 +124,22 @@ Experts ki raay do tareeke se merge hoti hai: linear pool `Σ w_i P_i` aur geome
 kitna kaunsa. Heavy formula-models pichle 730 draws (≈2 saal) par chalte hain, frequency /
 Markov / CTW / neural network poore 5 saal par.
 
+### 4.2a3 Markets ka same-day connection
+
+Din me results is kram me aate hain: Disawar ~05:00 → Faridabad ~18:15 → Ghaziabad ~21:30 →
+Gali ~23:30. Kisi market ki prediction usi din ke pehle aaye markets ke result ka intezaar
+karti hai (jaise Faridabad subah ke Disawar ka), taaki woh number bhi formule, cross-market
+model, neural network aur genetic programming me jude. Der ho to result time se 60 minute
+pehle bina uske lock ho jaati hai. Theorems tab me "(aaj)" wale tests yeh connection check
+karte hain.
+
+### 4.2a4 Miss-correction
+
+Har result ke baad tool dekhta hai ki asli number uski list se kis tarah khiska tha (palti,
+±1, ±10, ±11, cut). Ek Hedge in shifts ko weight deta hai; agar koi khiskav baar-baar sahi
+nikle to agli poori list usi taraf khisak jaati hai (`P'(v) = Σ_k c_k · P(T_k⁻¹(v))`).
+Test me: jo model hamesha 1 se chookta tha, uske saath tool ne "+1" seekh kar 100% exact kiya.
+
 ### 4.2b Khud ko todo + seekhne ka asar
 
 - **Shuffle test:** engine ko 3 baar aisi history par chalaya jaata hai jisme dates ka order

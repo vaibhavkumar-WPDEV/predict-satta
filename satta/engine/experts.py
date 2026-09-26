@@ -164,7 +164,7 @@ class CrossMarket(Expert):
     def predict(self, ctx):
         y = ctx.y
         pts, pus = [], []
-        for m in ctx.sd.others:
+        for m in ctx.sd.cross_keys:
             cur = ctx.cur[m]
             if cur < 0:
                 continue
@@ -223,7 +223,7 @@ class Transforms(Expert):
         if len(y) < 20:
             return UNIFORM.copy()
         srcs = {"A1": ctx.past("A1")}
-        for m in ctx.sd.others:
+        for m in ctx.sd.cross_keys:
             srcs[m] = ctx.past(m)
         rules = []
         for s, x in srcs.items():

@@ -83,15 +83,18 @@ def findings(sd: SeriesData, replay=None, n_experts: int | None = None) -> list[
         "H0: agle draw me palti jodi aane ka chance 1% hai.",
         f"{pal_hits}/{n - 1} baar", binom_sf(pal_hits, n - 1, 0.01))
 
-    for m in sd.others:
-        x = sd.F[m]
+    for key in sd.cross_keys:
+        m, when = (key[:-2], "aaj") if key.endswith("@0") else (key, "kal")
+        x = sd.F[key]
         ok = x >= 0
         if ok.sum() < 30:
             continue
-        chi, dof = _chi2_indep(x[ok] // 10, t[ok])
-        add("T8" + m[:2].upper(), f"Cross-market: {m.title()} (kal) → andar",
-            f"H0: {m.title()} ka kal ka andar digit, aaj ke andar digit ko affect nahi karta.",
-            f"χ²={chi:.1f}, dof={dof}, n={int(ok.sum())}", chi2_sf(chi, dof))
+        tag = "T8" + m[:2].upper() + ("0" if when == "aaj" else "")
+        for dname, xd, yd in (("andar", x[ok] // 10, t[ok]), ("bahar", x[ok] % 10, u[ok])):
+            chi, dof = _chi2_indep(xd, yd)
+            add(tag + dname[0].upper(), f"Cross-market: {m.title()} ({when}) → {dname}",
+                f"H0: {m.title()} ka {when} ka {dname} digit, is market ke {dname} digit ko affect nahi karta.",
+                f"χ²={chi:.1f}, dof={dof}, n={int(ok.sum())}", chi2_sf(chi, dof))
 
     counts = np.bincount(y, minlength=100)
     p = counts[counts > 0] / n

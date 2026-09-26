@@ -74,7 +74,16 @@ function predictionCard(m, hero) {
     return `<div class="card"><h2>${esc(m.name)}</h2><p class="muted">${esc(m.reason)}</p></div>`;
   }
   const p = m.next;
-  if (!p) return `<div class="card"><h2>${esc(m.name)}</h2><p class="muted">Prediction abhi lock nahi hui.</p></div>`;
+  if (!p) {
+    const w = m.waiting;
+    const msg = w && w.for && w.for.length
+      ? `${esc(w.date)} ki prediction tab lock hogi jab usi din ka ${w.for.map((n, i) => `${esc(n)} (~${esc(w.for_times[i])})`).join(", ")} result aa jayega, taaki woh bhi calculation me jude. Der hui to ${fmtTime(w.deadline)} par bina uske lock ho jayegi.`
+      : "Prediction abhi lock nahi hui.";
+    const r = lastEvaluated(m);
+    return `<div class="card ${hero ? "hero" : ""}"><h2>${esc(m.name)} <span class="muted">(${esc(m.short)})</span></h2>
+      <p>⏳ ${msg}</p>
+      ${r ? `<div class="muted small">Pichla result (${esc(r.date)}): <b>${jd(r.actual)}</b> ${resultPill(r)}</div>` : ""}</div>`;
+  }
   const maxP = p.top10[0][1];
   const jodis = p.top10.map(([v, pr], i) => `
       <div class="jodi ${i === 0 ? "first" : ""}"><b>${jd(v)}</b><small>${pct(pr, 2)}</small>
@@ -176,6 +185,9 @@ function statusStrip(d) {
     } else if (m.next && m.next.date === today) {
       body = `<div class="big">⏳</div><div>~${esc(m.result_time)} IST</div>
         <div class="small" data-until="${esc(m.next.result_time)}"></div>`;
+    } else if (m.waiting && m.waiting.date === today) {
+      body = `<div class="big">⏳</div><div>~${esc(m.result_time)} IST</div>
+        <div class="muted small">Prediction ${m.waiting.for.length ? esc(m.waiting.for.join(", ")) + " ke aaj ke result ke baad" : "jaldi"} lock hogi</div>`;
     } else {
       body = `<div class="big">–</div><div class="muted">Aaj result nahi (chhutti) · agla ${esc(m.next ? m.next.date : "")}</div>`;
     }
@@ -343,6 +355,9 @@ function renderLearning() {
       ${pg.tuning && pg.tuning.length ? `<h3>Self-tuning (meta-learning): tool ne khud chuna kitni tezi se seekhe</h3>
         <p class="muted">η = learning speed (bada = ek result se zyada badlaav), α = bhoolne ki dar (bada = purana jaldi bhoole). 9 settings saath chalti hain, jo sahi nikli uska bharosa badhta hai.</p>
         <div class="row">${pg.tuning.map((t, i) => `<span class="pill ${i === 0 ? "good" : ""}">η=${t.eta}, α=${t.alpha}: ${pct(t.weight)}</span>`).join("")}</div>` : ""}
+      ${pg.correction ? `<h3>Miss-correction: miss hue results se seekha</h3>
+        <p class="muted">Har result ke baad tool dekhta hai asli number uski list se kis tarah khiska tha (palti, ±1, ±10, ±11, cut). Jo khiskav baar-baar sahi nikle, agli list usi taraf khiska di jaati hai. "same" = koi khiskav nahi.</p>
+        <div class="row">${pg.correction.map((c, i) => `<span class="pill ${i === 0 ? "good" : ""}">${esc(c.shift)}: ${pct(c.weight)}</span>`).join("")}</div>` : ""}
       ${pg.merge ? `<h3>Calculations ka merge</h3>
         <p class="muted">Saare models ki raay do tareeke se jodi jaati hai: linear (sabki raay ka weighted average) aur geometric (jahan sab models sahmat hon wahan tez). Tool results dekh kar khud tay karta hai kitna kaunsa.</p>
         <div class="row"><span class="pill">Linear: ${pct(pg.merge.linear)}</span><span class="pill">Geometric: ${pct(pg.merge.geometric)}</span></div>` : ""}

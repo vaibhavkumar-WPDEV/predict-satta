@@ -53,6 +53,10 @@ def cmd_predict(a):
             continue
         p = m["next"]
         if not p:
+            w = m.get("waiting") or {}
+            print(f"\n== {m['name']} ({m['short']}) — {w.get('date')}: prediction "
+                  f"{', '.join(w.get('for', [])) + ' ke aaj ke result ke baad' if w.get('for') else 'jaldi'} "
+                  f"lock hogi (deadline {w.get('deadline')})")
             continue
         print(f"\n== {m['name']} ({m['short']}) — {p['date']}  result ~{m['result_time']} IST ==")
         print("  Top-10 jodi :", "  ".join(f"{v:02d}({_pct(pr)})" for v, pr in p["top10"]))

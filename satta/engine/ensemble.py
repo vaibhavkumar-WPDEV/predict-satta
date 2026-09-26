@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .. import config
-from .base import SeriesData, andar_bahar
+from .base import SeriesData, andar_bahar, cut, rev
 from .experts import Expert, default_experts
 
 GRID = [(eta, alpha) for eta in (0.5, 1.0, 2.0) for alpha in (0.002, 0.01, 0.05)]
@@ -72,6 +72,7 @@ class Replay:
     grid: list = field(default_factory=list)
     meta: np.ndarray | None = None      # weight of each (eta, alpha) ensemble
     merge: np.ndarray | None = None     # weight of the linear and the geometric pool
+    correction: np.ndarray | None = None  # weight of each miss-correction shift
 
 
 def rank_of(p: np.ndarray, v: int) -> int:
@@ -83,6 +84,27 @@ def rank_of(p: np.ndarray, v: int) -> int:
 def expert_matrix(sd: SeriesData, experts: list[Expert], i: int, date: dt.date | None = None) -> np.ndarray:
     ctx = sd.context(i, date)
     return np.stack([e.predict(ctx) for e in experts])
+
+
+# Miss-correction: if results keep landing on a fixed transform of the numbers
+# we rank high (their palti, ±1, ±10, ±11 or cut), the whole list is moved that
+# way. P_shift(v) = P(T⁻¹(v)); a Hedge over the shifts learns from every result
+# where the real number fell relative to our list. "same" = no correction.
+SHIFTS = {
+    "same": lambda x: x,
+    "palti": rev,
+    "+1": lambda x: (x + 1) % 100,
+    "-1": lambda x: (x - 1) % 100,
+    "+10": lambda x: (x + 10) % 100,
+    "-10": lambda x: (x - 10) % 100,
+    "+11": lambda x: (x + 11) % 100,
+    "-11": lambda x: (x - 11) % 100,
+    "cut": cut,
+}
+_V = np.arange(100)
+# SHIFT_INV[k][v] = the number that shift k moves onto v
+SHIFT_INV = np.stack([np.argsort(fn(_V)) for fn in SHIFTS.values()])
+SHIFT_PRIOR = np.array([0.6] + [0.4 / (len(SHIFTS) - 1)] * (len(SHIFTS) - 1))
 
 
 def pools(w: np.ndarray, P: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -105,16 +127,22 @@ def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | Non
     v = np.full(g, 1.0 / g)        # meta weights over the ensembles
     losses = np.zeros(k)
     u = np.array([0.5, 0.5])        # linear vs geometric merge
+    c = SHIFT_PRIOR.copy()          # miss-correction: how the result moves from our list
     rep = Replay(sd.market, experts, grid=grid)
     for i in range(start, sd.n):
         P = expert_matrix(sd, experts, i)
         w = v @ W
         lin, geo = pools(w, P)
-        mix = u[0] * lin + u[1] * geo
+        merged = u[0] * lin + u[1] * geo
+        shifted = merged[SHIFT_INV]                 # (K, 100): list moved by each shift
+        mix = c @ shifted
         y = int(sd.y[i])
         u = u * np.array([lin[y], geo[y]])
         u /= u.sum()
         u = (1 - META_ALPHA) * u + META_ALPHA / 2
+        c = c * shifted[:, y]
+        c /= c.sum()
+        c = (1 - META_ALPHA) * c + META_ALPHA / len(c)
         pa = np.maximum(P[:, y], 1e-300)
         losses -= np.log(pa)
         rep.mix_loss -= math.log(max(float(mix[y]), 1e-300))
@@ -131,6 +159,7 @@ def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | Non
     rep.weights = v @ W
     rep.meta = v
     rep.merge = u
+    rep.correction = c
     rep.losses = losses
     return rep
 
@@ -140,7 +169,8 @@ def predict_next(sd: SeriesData, rep: Replay, date: dt.date) -> tuple[np.ndarray
     P = expert_matrix(sd, rep.experts, sd.n, date)
     lin, geo = pools(rep.weights, P)
     u = rep.merge if rep.merge is not None else np.array([1.0, 0.0])
-    return u[0] * lin + u[1] * geo, P
+    c = rep.correction if rep.correction is not None else SHIFT_PRIOR
+    return c @ (u[0] * lin + u[1] * geo)[SHIFT_INV], P
 
 
 # ------------------------------------------------------------- summaries

@@ -18,7 +18,7 @@ WEB_DIR = ROOT / "web"
 # downloaded automatically; the models train on all of it.
 HISTORY_START = dt.date.fromisoformat(os.environ.get("SATTA_HISTORY_START", "2021-01-01"))
 
-ENGINE_VERSION = "3.0"
+ENGINE_VERSION = "3.1"
 
 # Result times are approximate (IST). They decide when a prediction stops
 # counting as "live" (made before the result) and when the scheduler looks for

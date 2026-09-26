@@ -110,7 +110,7 @@ def _onehot_features(sd, F: dict) -> np.ndarray:
     """Binary features known before the draw: digits of the last two draws, other markets'
     previous-day digits, weekday, plus a bias. Missing values give all-zero blocks."""
     cols = []
-    for key in ["A1", "A2"] + sd.others:
+    for key in ["A1", "A2"] + sd.cross_keys:
         x = np.asarray(F[key])
         for digit in (x // 10, x % 10):
             oh = (digit[:, None] == np.arange(10)[None, :]) & (x >= 0)[:, None]

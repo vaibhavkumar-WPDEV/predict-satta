@@ -45,10 +45,14 @@ def variables(sd: SeriesData, F: dict) -> tuple[dict, dict, dict]:
     for m in sd.others:
         jv[m], names[m] = F[m], f"{_short(m)}(kal)"
         jv[m + "r"], names[m + "r"] = _safe(rev, F[m]), f"ulta {_short(m)}(kal)"
+    for m in sd.earlier:
+        key = m + "@0"
+        jv[key], names[key] = F[key], f"{_short(m)}(aaj)"
+        jv[key + "r"], names[key + "r"] = _safe(rev, F[key]), f"ulta {_short(m)}(aaj)"
     jv["DM"], names["DM"] = F["DM"], "tareekh"
 
     dv = {}
-    for key in ["A1", "A2"] + sd.others:
+    for key in ["A1", "A2"] + sd.cross_keys:
         dv[key + ".t"] = _safe(lambda x: x // 10, F[key])
         dv[key + ".u"] = _safe(lambda x: x % 10, F[key])
         names[key + ".t"] = f"andar[{names[key]}]"

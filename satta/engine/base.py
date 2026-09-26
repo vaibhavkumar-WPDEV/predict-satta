@@ -53,12 +53,20 @@ def latest_before(series: dict, date: dt.date, max_gap: int = 3) -> int:
     return -1
 
 
+def earlier_markets(market: str) -> list[str]:
+    """Markets whose result on the same date is declared before this market's."""
+    t = config.MARKETS[market]["result_time"]
+    return [m for m in config.MARKET_KEYS if config.MARKETS[m]["result_time"] < t]
+
+
 class SeriesData:
     """One market's result series plus the features known before each draw.
 
     F[key][i] is the value of feature `key` known *before* draw i:
       A1/A2  previous two draws of the same market
       <mkt>  the other market's result of the previous calendar day(s)
+      <mkt>@0  the same day's result of a market declared earlier that day
+             (Disawar 05:00 < Faridabad 18:15 < Ghaziabad 21:30 < Gali 23:30)
       DM/WD/MO  day of month, weekday, month of draw i
     Missing values are -1.
     """
@@ -72,7 +80,11 @@ class SeriesData:
         self.y = np.array([series[d] for d in self.dates], dtype=int)
         self.n = len(self.y)
         self.others = [m for m in config.MARKET_KEYS if m != market]
-        self.feature_keys = ["A1", "A2", "DM", "WD", "MO"] + self.others
+        self.earlier = earlier_markets(market)
+        self.same_day = [m + "@0" for m in self.earlier]
+        # every other-market input: yesterday's results and today's earlier results
+        self.cross_keys = self.others + self.same_day
+        self.feature_keys = ["A1", "A2", "DM", "WD", "MO"] + self.cross_keys
         feats = [self.features_for(d, i) for i, d in enumerate(self.dates)]
         self.F = {k: np.array([f[k] for f in feats], dtype=int) if feats else np.zeros(0, int)
                   for k in self.feature_keys}
@@ -87,6 +99,8 @@ class SeriesData:
         }
         for m in self.others:
             f[m] = latest_before(self.table.get(m, {}), date)
+        for m in self.earlier:
+            f[m + "@0"] = int(self.table.get(m, {}).get(date, -1))
         return f
 
     def context(self, i: int, date: dt.date | None = None) -> "Context":
