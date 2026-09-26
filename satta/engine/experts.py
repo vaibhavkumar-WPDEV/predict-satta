@@ -139,14 +139,13 @@ class GapHazard(Expert):
         hi = self.EDGES[1:] - 1
         events = np.zeros(len(lo))
         exposure = np.zeros(len(lo))
+        idx = np.arange(n)
+        order = np.lexsort((idx, y))           # by number, then by time
+        ys, ix = y[order], idx[order]
+        G = (ix[1:] - ix[:-1])[ys[1:] == ys[:-1]]  # gaps between repeats of the same number
         last = np.full(100, -1)
-        gaps = []
-        for i, v in enumerate(y):
-            if last[v] >= 0:
-                gaps.append(i - last[v])
-            last[v] = i
-        if gaps:
-            G = np.array(gaps)
+        np.maximum.at(last, y, idx)
+        if len(G):
             b = np.searchsorted(self.EDGES, G, side="right") - 1
             np.add.at(events, b, 1)
             exposure += np.clip(np.minimum(G[:, None], hi[None, :]) - lo[None, :] + 1, 0, None).sum(axis=0)
@@ -236,7 +235,8 @@ class Transforms(Expert):
         return rule_mixture(rules, y)
 
 
-def rule_mixture(rules: list[tuple[np.ndarray, int]], y: np.ndarray, min_trials: int = 15) -> np.ndarray:
+def rule_mixture(rules: list[tuple[np.ndarray, int]], y: np.ndarray, min_trials: int = 15,
+                 window: int = 730) -> np.ndarray:
     """Mix deterministic rules "next = f(past)" by how often each was right.
 
     rules: (predictions for every past draw, -1 = not available; prediction for the next draw).
@@ -244,9 +244,11 @@ def rule_mixture(rules: list[tuple[np.ndarray, int]], y: np.ndarray, min_trials:
     """
     num = np.zeros(100)
     wsum = 0.0
+    y = y[-window:]
     for past, cur in rules:
         if cur < 0:
             continue
+        past = past[-window:]
         ok = past >= 0
         trials = int(ok.sum())
         if trials < min_trials:
@@ -330,7 +332,7 @@ class Aryabhata(Expert):
             return UNIFORM.copy()
         key = ("lcg", r)
         if key not in ctx.sd.cache:
-            ctx.sd.cache[key] = formulas.lcg_solve(ctx.sd.y[:r])
+            ctx.sd.cache[key] = formulas.lcg_solve(ctx.sd.y[max(0, r - formulas.WINDOW):r])
         dist = np.zeros(100)
         for a, c, hits, n in ctx.sd.cache[key]:
             dist[(a * int(ctx.y[-1]) + c) % 100] += max(hits / n - 0.01, 1e-3)
@@ -364,7 +366,7 @@ class AryabhataDigit(Expert):
         for name, digits in (("t", ctx.sd.y // 10), ("u", ctx.sd.y % 10)):
             key = ("lcg_digit", name, r)
             if key not in ctx.sd.cache:
-                ctx.sd.cache[key] = self.solve(digits[:r])
+                ctx.sd.cache[key] = self.solve(digits[max(0, r - formulas.WINDOW):r])
             cur = digits[: ctx.i]
             dist = np.zeros(10)
             for a, b, c, hits, n in ctx.sd.cache[key]:
@@ -552,7 +554,7 @@ class FormulaDigit(Expert):
 
 
 def default_experts() -> list[Expert]:
-    from .advanced import NeuralNet, UniversalCTW
+    from .advanced import GeneticFormula, NeuralNet, UniversalCTW
 
     return [
         Uniform(),
@@ -582,4 +584,5 @@ def default_experts() -> list[Expert]:
         RandomWalk(),
         UniversalCTW(),
         NeuralNet(),
+        GeneticFormula(),
     ]

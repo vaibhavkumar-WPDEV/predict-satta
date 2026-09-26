@@ -40,6 +40,30 @@ def test_cycle_locks_prediction_and_scores_it_later(data_dir):
     assert dash["markets"]["faridabad"]["next"]["date"] == "2026-03-03"
 
 
+def test_unchanged_data_takes_the_fast_path(data_dir):
+    write_results(data_dir / "results.csv", synthetic_rows(60))
+    first = service.cycle(fetch=False, now=at(2026, 3, 2, 9))
+    assert not first.get("fast_path")
+    again = service.cycle(fetch=False, now=at(2026, 3, 2, 10))
+    assert again.get("fast_path") is True
+    dash = json.loads((data_dir / "dashboard.json").read_text())
+    assert dash["generated_at"].startswith("2026-03-02T10:00")
+    assert dash["markets"]["faridabad"]["next"]["date"] == "2026-03-02"
+
+
+def test_genetic_programming_finds_a_nonlinear_formula():
+    import numpy as np
+
+    from satta.engine import genetic
+
+    rng = np.random.default_rng(0)
+    g, d = rng.integers(0, 100, 400), rng.integers(0, 100, 400)
+    y = ((g % 10) * 10 + d // 10 + 13) % 100  # jodi(bahar(GALI), andar(DSWR)) + 13
+    best = genetic.evolve({"gali": g, "disawar": d, "noise": rng.integers(0, 100, 400)}, y,
+                          seed=1, pop=150, gens=30)[0]
+    assert best["hits"] == best["n"] == 400
+
+
 def test_tampering_is_detected(data_dir):
     write_results(data_dir / "results.csv", synthetic_rows(40))
     service.cycle(fetch=False, now=at(2026, 2, 10, 9))

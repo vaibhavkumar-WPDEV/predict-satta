@@ -49,6 +49,18 @@ def save_raw(triples: list[tuple]) -> None:
             w.writerows(sorted(items))
 
 
+def load_sync_state() -> dict:
+    path = _dir() / "sync_state.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_sync_state(state: dict) -> None:
+    (_dir() / "sync_state.json").write_text(json.dumps(state, indent=1), encoding="utf-8")
+
+
 def cache_dir() -> Path:
     d = _dir() / "cache"
     d.mkdir(parents=True, exist_ok=True)

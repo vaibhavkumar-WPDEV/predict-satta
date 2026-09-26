@@ -216,20 +216,23 @@ def _parse_date_list(rows, year, month, market):
 
 # ------------------------------------------------------------------ fetch
 
-def _get(url: str, session: requests.Session, tries: int = 2) -> str | None:
+def _get(url: str, session: requests.Session, tries: int = 2) -> tuple[str | None, str]:
+    """(html, status) with status "ok", "missing" (page does not exist) or "error"."""
     for attempt in range(tries):
         try:
             resp = session.get(url, timeout=25, headers={"User-Agent": UA, "Accept-Language": "en-IN,en"})
             if resp.status_code == 200 and resp.text:
-                return resp.text
+                return resp.text, "ok"
             log.warning("GET %s -> HTTP %s", url, resp.status_code)
-            if resp.status_code in (403, 404, 410):
-                return None
+            if resp.status_code in (404, 410):
+                return None, "missing"
+            if resp.status_code == 403:
+                return None, "error"
         except requests.RequestException as exc:
             log.warning("GET %s failed: %s", url, exc)
         if attempt + 1 < tries:
             time.sleep(2)
-    return None
+    return None, "error"
 
 
 def _months_between(start: dt.date, end: dt.date):
@@ -284,6 +287,7 @@ def fetch_all(start: dt.date, end: dt.date, sources: list[dict] | None = None,
     for src in sources:
         got = 0
         errors = 0
+        missing = 0
         dropped = Counter()
         pages = []
         if src["kind"] == "monthly":
@@ -293,8 +297,11 @@ def fetch_all(start: dt.date, end: dt.date, sources: list[dict] | None = None,
         else:
             pages = [((y, None), src["url"].format(year=y)) for y in range(start.year, end.year + 1)]
         for (y, m), url in pages:
-            html = _get(url, session)
+            html, state = _get(url, session)
             if html is None:
+                if state == "missing":
+                    missing += 1  # e.g. a year the site has no chart for
+                    continue
                 errors += 1
                 if errors >= 2 and got == 0:
                     break  # site down or blocked: don't hammer it
@@ -308,7 +315,7 @@ def fetch_all(start: dt.date, end: dt.date, sources: list[dict] | None = None,
                 triples.append((src["id"], src.get("priority", 9), mk, d, v))
                 got += 1
         status.append({"source": src["id"], "values": got, "failed_pages": errors,
-                       "dropped": dict(dropped)})
+                       "missing_pages": missing, "dropped": dict(dropped)})
         log.info("source %s: %d values, %d failed pages, dropped %s", src["id"], got, errors, dict(dropped))
     return triples, status
 
@@ -369,9 +376,17 @@ def sync(now: dt.datetime | None = None, full: bool = False) -> dict:
     existing = storage.load_result_rows()
     per_market = Counter(r["market"] for r in existing)
     expected = (today - config.HISTORY_START).days * 0.8
-    if full or not existing or any(per_market[m] < expected for m in config.MARKET_KEYS):
-        # first run, or some market still has gaps: fetch everything again
+    state = storage.load_sync_state()
+    last_full = state.get("last_full")
+    stale = (state.get("history_start") != config.HISTORY_START.isoformat() or not last_full
+             or now - dt.datetime.fromisoformat(last_full) > dt.timedelta(hours=24))
+    gaps = any(per_market[m] < expected for m in config.MARKET_KEYS)
+    if full or not existing or (gaps and stale):
+        # first run, a longer history was asked for, or gaps (retried once a day)
         start = config.HISTORY_START
+        state.update(history_start=config.HISTORY_START.isoformat(),
+                     last_full=now.isoformat(timespec="seconds"))
+        storage.save_sync_state(state)
     else:
         # re-read the last ~40 days: catches late results and corrections
         start = max(config.HISTORY_START, today - dt.timedelta(days=40))

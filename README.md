@@ -27,7 +27,7 @@ python -m satta serve
 
 Browser me kholo: **http://localhost:8000**
 
-Pehli baar server khud Jan 2025 se aaj tak ka data websites se download karega
+Pehli baar server khud Jan 2021 se aaj tak (5 saal) ka data websites se download karega
 (1-2 minute). Uske baad har 15 minute me naya result check karta hai. "Abhi
 Update Karo" button dabane se turant cycle chalta hai.
 
@@ -39,7 +39,7 @@ Update Karo" button dabane se turant cycle chalta hai.
 | `python -m satta cycle` | Ek baar: fetch → check → seekho → predict → lock |
 | `python -m satta predict` | Har market ki locked agli prediction |
 | `python -m satta backtest --market faridabad --days 7` | 7 din ka test, har din ka hit/miss + reason |
-| `python -m satta table` | Jan 2025 se aaj tak ka poora result table |
+| `python -m satta table` | Jan 2021 se aaj tak ka poora result table |
 | `python -m satta formulas` | Tool ke khud ke formule + unseen data par test |
 | `python -m satta theorems` | Statistical findings (pattern hai ya random) |
 | `python -m satta verify` | Har locked prediction ka hash proof check |
@@ -48,7 +48,7 @@ Update Karo" button dabane se turant cycle chalta hai.
 
 ## 2. Automation (bina computer on rakhe)
 
-`.github/workflows/auto-predict.yml` GitHub Actions par **har ghante** chalta hai
+`.github/workflows/auto-predict.yml` GitHub Actions par **har 30 minute** chalta hai
 (repo ki default branch par merge hone ke baad):
 
 1. naya result download
@@ -80,7 +80,7 @@ update). Private repo par Pages ke liye GitHub ka paid plan chahiye; warna
 
 ## 4. Math — engine kaise sochta hai
 
-### 4.1 27 experts (har ek alag theory)
+### 4.1 28 experts (har ek alag theory)
 
 Har expert `P(agla number = v)` deta hai, v = 00..99.
 
@@ -105,6 +105,7 @@ Har expert `P(agla number = v)` deta hai, v = 00..99.
 | Einstein Brownian motion | random walk: badlaav `Δ = y_t − y_(t−1)` ka smoothed distribution |
 | Universal prediction (CTW) | Context Tree Weighting (Willems 1995): andar/bahar ke har context 0–3 digits ka KT estimator, saare Markov orders ka exact Bayesian average |
 | Neural network | 1 hidden layer (32 tanh), input = pichle draws + doosre markets ke digits + weekday, online SGD + experience replay |
+| Genetic programming | tool ke khud ke formule: `+ − ×`, ulta, cut, andar/bahar, jod, beejank, jodi(a,b) se bane expression trees; selection + crossover + mutation se evolve, pichle 730 draws par |
 
 Formula-experts ka bharosa adaptive hai: `P = (1−g)·uniform + g·votes`, jahan `g` = best
 formula ka purana hit-rate (5–95%). Random data par g ≈ 5% rehta hai, asli formula par 90%+.
@@ -115,6 +116,13 @@ Learning speed `η ∈ {0.5, 1, 2}` aur bhoolne ki dar `α ∈ {0.002, 0.01, 0.0
 saath chalti hain; upar ek aur Hedge unhe weight deta hai. Final prediction phir bhi ek hi
 mixture hai: `w_eff = Σ_g v_g · w_g`. Dashboard Learning tab me dikhta hai tool ne kaunsi
 setting chuni.
+
+### 4.2a2 Calculations ka merge
+
+Experts ki raay do tareeke se merge hoti hai: linear pool `Σ w_i P_i` aur geometric pool
+`∝ Π P_i^(w_i)` (jahan sab sahmat hon wahan tez). Ek aur Hedge results dekh kar tay karta hai
+kitna kaunsa. Heavy formula-models pichle 730 draws (≈2 saal) par chalte hain, frequency /
+Markov / CTW / neural network poore 5 saal par.
 
 ### 4.2b Khud ko todo + seekhne ka asar
 
@@ -133,7 +141,7 @@ w_i        ← (1 − α)·w_i/Σw + α/N                 α = 1%, taaki koi mod
 ```
 
 **Theorem (Bayes mixture):** `L_mix ≤ min_i L_i + ln N` — cumulative log-loss me
-ensemble kabhi best single model se `ln 27 ≈ 3.3` se zyada peeche nahi rehta.
+ensemble kabhi best single model se `ln 28 ≈ 3.3` se zyada peeche nahi rehta.
 Dashboard ka T10 is theorem ko asli data par check karta hai.
 
 ### 4.3 Khud ke formule
@@ -200,7 +208,8 @@ satta/
   engine/
     base.py        series, features, context (sirf past data)
     experts.py     25 classic experts
-    advanced.py    universal prediction (CTW) + neural network
+    advanced.py    universal prediction (CTW), neural network, genetic-programming expert
+    genetic.py     formula evolution (expression trees, crossover, mutation)
     formulas.py    formula discovery + holdout test
     ensemble.py    Fixed-Share Hedge, replay, scoring, post-mortem
     theorems.py    statistical findings

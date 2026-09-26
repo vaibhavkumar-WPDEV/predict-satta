@@ -121,6 +121,39 @@ def _onehot_features(sd, F: dict) -> np.ndarray:
     return np.concatenate(cols, axis=1)
 
 
+class GeneticFormula(Expert):
+    name = "genetic_formula"
+    label = "Genetic programming (khud evolve kiye formule)"
+    theory = ("Har 28 draws par 60 random formule (+ − ×, ulta, cut, andar/bahar, jod, beejank, jodi) "
+              "12 generations tak evolve (selection, crossover, mutation) pichle 730 draws par; top-3 "
+              "vote karte hain, bharosa = best formula ka purana hit-rate.")
+    REFRESH = 28
+
+    def predict(self, ctx: Context):
+        from . import formulas, genetic
+        from .experts import confident_mix
+
+        r = (ctx.i // self.REFRESH) * self.REFRESH
+        if r < 60:
+            return UNIFORM.copy()
+        key = ("gp", r)
+        if key not in ctx.sd.cache:
+            jv, _, _ = formulas._series_vars(ctx.sd)
+            lo = max(0, r - formulas.WINDOW)
+            ctx.sd.cache[key] = genetic.evolve({k: v[lo:r] for k, v in jv.items()}, ctx.sd.y[lo:r],
+                                               seed=r, pop=60, gens=12, top=3)
+        found = ctx.sd.cache[key]
+        if not found:
+            return UNIFORM.copy()
+        cjv, _ = formulas.current_vars(ctx.sd, ctx.cur)
+        votes = np.zeros(100)
+        for f in found:
+            v = genetic.predict(f, cjv)
+            if v >= 0:
+                votes[v] += max(f["hits"] / f["n"] - 0.01, 1e-3)
+        return confident_mix(votes, found[0]["hits"] / found[0]["n"], UNIFORM)
+
+
 class NeuralNet(Expert):
     """One-hidden-layer network trained online by SGD with experience replay."""
 

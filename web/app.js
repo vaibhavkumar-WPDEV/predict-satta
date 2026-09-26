@@ -91,6 +91,10 @@ function predictionCard(m, hero) {
     <div class="row"><span class="big">Result date</span> <b>${esc(p.date)}</b>
       <span class="big">· time ~${esc(m.result_time)} IST</span></div>
     ${hero ? `<div class="countdown" data-until="${esc(p.result_time)}"></div>` : ""}
+    ${(() => {
+      const r = lastEvaluated(m);
+      return r ? `<div class="muted small">Pichla result (${esc(r.date)}): <b>${jd(r.actual)}</b> ${resultPill(r)}</div>` : "";
+    })()}
     ${(m.closed_days || []).length ? `<div class="muted" style="font-size:12px">Data se seekha: ${m.closed_days.map((k) => ({ month_end: "mahine ke aakhri din", month_start: "mahine ki 1 tareekh" }[k] || k)).join(", ")} result nahi aata — us din ki prediction nahi banti.</div>` : ""}
     <div class="jodis">${jodis}</div>
     <div class="digits">
@@ -134,12 +138,53 @@ function renderToday() {
       ${d.sync && d.sync.error ? "<br>Error: " + esc(d.sync.error) : ""}
       ${allFailed ? "<br>Koi bhi result website nahi khuli (internet/firewall check karo). Sources: " + srcs.map((s) => esc(s.source)).join(", ") : ""}</div>`;
   }
-  $("#tab-today").innerHTML = banner + (primary ? predictionCard(primary, true) : "") +
+  $("#tab-today").innerHTML = statusStrip(d) + banner + (primary ? predictionCard(primary, true) : "") +
     (primary ? coverageCard(primary) : "") +
     `<div class="grid">${others.map((m) => predictionCard(m, false)).join("")}</div>`;
   const rate = $("#payRate");
   if (rate) rate.addEventListener("change", (e) => { state.rate = Number(e.target.value) || 90; renderToday(); });
   tickCountdown();
+}
+
+const todayIST = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+function lastEvaluated(m) {
+  return ((m.live && m.live.rows) || []).find((r) => r.actual != null);
+}
+
+function resultPill(r) {
+  if (!r || r.actual == null) return "";
+  return r.status === "hit"
+    ? `<span class="pill good">HIT · rank ${r.rank}</span>`
+    : `<span class="pill bad">MISS · rank ${r.rank}</span>`;
+}
+
+// "Aaj ke results": when each market's result comes and what came.
+function statusStrip(d) {
+  const today = todayIST();
+  const ms = Object.values(d.markets).filter((m) => m.ready)
+    .sort((a, b) => a.result_time.localeCompare(b.result_time));
+  if (!ms.length) return "";
+  const cells = ms.map((m) => {
+    const row = ((m.live && m.live.rows) || []).find((r) => r.date === today);
+    const res = d.results.find((r) => r.date === today);
+    const actual = row && row.actual != null ? row.actual : res ? res[m.key] : null;
+    let body;
+    if (actual != null) {
+      body = `<div class="big">${jd(actual)}</div><div>Result aa gaya ${row ? resultPill(row) : ""}</div>
+        ${row ? `<div class="muted small">Locked top-10: ${row.top10.map(jd).join(" ")}</div>` : ""}`;
+    } else if (m.next && m.next.date === today) {
+      body = `<div class="big">⏳</div><div>~${esc(m.result_time)} IST</div>
+        <div class="small" data-until="${esc(m.next.result_time)}"></div>`;
+    } else {
+      body = `<div class="big">–</div><div class="muted">Aaj result nahi (chhutti) · agla ${esc(m.next ? m.next.date : "")}</div>`;
+    }
+    return `<div class="status-cell"><div class="row" style="justify-content:space-between">
+      <b>${esc(m.name)}</b><span class="muted small">${esc(m.result_time)} IST</span></div>${body}</div>`;
+  }).join("");
+  return `<div class="card"><h2>Aaj ke results (${esc(today)})</h2>
+    <p class="muted small">Result aate hi tool khud laata hai (har 30 minute check) aur locked prediction se milata hai. Poori list: Proof (Live) tab.</p>
+    <div class="status-grid">${cells}</div></div>`;
 }
 
 // Ranking that starts with the locked list (exact order) and continues by probability.
@@ -298,6 +343,9 @@ function renderLearning() {
       ${pg.tuning && pg.tuning.length ? `<h3>Self-tuning (meta-learning): tool ne khud chuna kitni tezi se seekhe</h3>
         <p class="muted">η = learning speed (bada = ek result se zyada badlaav), α = bhoolne ki dar (bada = purana jaldi bhoole). 9 settings saath chalti hain, jo sahi nikli uska bharosa badhta hai.</p>
         <div class="row">${pg.tuning.map((t, i) => `<span class="pill ${i === 0 ? "good" : ""}">η=${t.eta}, α=${t.alpha}: ${pct(t.weight)}</span>`).join("")}</div>` : ""}
+      ${pg.merge ? `<h3>Calculations ka merge</h3>
+        <p class="muted">Saare models ki raay do tareeke se jodi jaati hai: linear (sabki raay ka weighted average) aur geometric (jahan sab models sahmat hon wahan tez). Tool results dekh kar khud tay karta hai kitna kaunsa.</p>
+        <div class="row"><span class="pill">Linear: ${pct(pg.merge.linear)}</span><span class="pill">Geometric: ${pct(pg.merge.geometric)}</span></div>` : ""}
     </div>` : "";
   const breakCard = sb ? `
     <div class="card"><h2>"Khud ko todo" test (shuffle)</h2>
@@ -372,7 +420,8 @@ function renderFormulas() {
     return;
   }
   const names = { jodi: "Jodi formule (mod 100)", andar: "Andar formule (mod 10)", bahar: "Bahar formule (mod 10)",
-    aryabhata: "Aryabhata kuttaka: (a·pichla + c) mod 100 — 10,000 linear congruences" };
+    aryabhata: "Aryabhata kuttaka: (a·pichla + c) mod 100 — 10,000 linear congruences",
+    genetic: "Genetic programming — tool ke khud evolve kiye formule (+ − ×, ulta, cut, jod, beejank, jodi)" };
   const blocks = Object.entries(fr.kinds).map(([kind, k]) => `
     <div class="card table-wrap"><h2>${names[kind]}</h2>
       <p class="muted">${k.tested} formule try kiye. Random chance: ${pct(k.chance_rate, 0)}.

@@ -63,7 +63,7 @@ def test_planted_pattern_is_learned():
     assert s["hit1"]["rate"] > 0.25
     assert s["hit1"]["p_value"] < 1e-6
     best = rep.experts[int(np.argmax(rep.weights))].name
-    assert best.startswith("formula") or best in ("cross_market", "transforms")
+    assert best.startswith("formula") or best in ("cross_market", "transforms", "genetic_formula")
 
 
 def test_aryabhata_cracks_a_linear_congruential_generator():

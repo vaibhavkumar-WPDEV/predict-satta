@@ -130,12 +130,15 @@ def expression(f: dict, target: str, names: dict) -> str:
     return f"{target} = ({body}) mod {f['mod']}"
 
 
+WINDOW = 730  # formulas are searched on the last ~2 years before the draw
+
+
 def discover(sd: SeriesData, upto: int, kind: str, top: int) -> list[dict]:
-    """Best formulas of one kind using draws [0, upto) only."""
+    """Best formulas of one kind using draws [upto - WINDOW, upto) only."""
     jv, dv, _ = _series_vars(sd)
     Y, mod = _targets(sd)[kind]
     V = jv if kind == "jodi" else dv
-    return search(Y, V, mod, 0, upto)[:top]
+    return search(Y, V, mod, max(0, upto - WINDOW), upto)[:top]
 
 
 def current_vars(sd: SeriesData, cur: dict) -> tuple[dict, dict]:
@@ -219,4 +222,40 @@ def report(sd: SeriesData, next_cur: dict | None, holdout: float = 0.3, top: int
                                  "value": val, "hits": f["hits"], "n": f["n"]})
         out["kinds"][kind] = {"tested": tested, "chance_rate": p0, "top": rows, "next": live}
     out["kinds"]["aryabhata"] = _lcg_report(sd, split, top, next_cur is not None)
+    out["kinds"]["genetic"] = _genetic_report(sd, split, top, next_cur)
     return out
+
+
+def _genetic_report(sd: SeriesData, split: int, top: int, next_cur: dict | None) -> dict:
+    """Evolve formulas on the training part, judge them on the unseen part."""
+    from . import genetic
+
+    jv, _, names = _series_vars(sd)
+    Y = sd.y
+    me = _short(sd.market)
+    lo = max(0, split - WINDOW)
+    evolved = genetic.evolve({k: v[lo:split] for k, v in jv.items()}, Y[lo:split],
+                             seed=split, pop=120, gens=25, top=top)
+    test_V = {k: v[split:] for k, v in jv.items()}
+    rows = []
+    for f in evolved:
+        vals = genetic.evaluate(f["tree"], test_V, len(Y) - split)
+        ok = vals >= 0
+        t_n = int(ok.sum())
+        t_hits = int((((vals[ok] + f["k"]) % 100) == Y[split:][ok]).sum())
+        p_val = binom_sf(t_hits, t_n, 0.01) if t_n else 1.0
+        rows.append({"formula": f"{me} = ({genetic.to_str(f['tree'], names)} + {f['k']:02d}) mod 100",
+                     "train_hits": f["hits"], "train_n": f["n"], "train_rate": f["hits"] / f["n"],
+                     "test_hits": t_hits, "test_n": t_n, "test_rate": t_hits / t_n if t_n else 0.0,
+                     "chance_rate": 0.01, "p_value": p_val, "significant": p_val * top < 0.05})
+    nxt = []
+    if next_cur is not None:
+        lo = max(0, sd.n - WINDOW)
+        cjv, _ = current_vars(sd, next_cur)
+        for f in genetic.evolve({k: v[lo:] for k, v in jv.items()}, Y[lo:], seed=sd.n,
+                                pop=120, gens=25, top=5):
+            v = genetic.predict(f, cjv)
+            if v >= 0:
+                nxt.append({"formula": f"{me} = ({genetic.to_str(f['tree'], names)} + {f['k']:02d}) mod 100",
+                            "value": v, "hits": f["hits"], "n": f["n"]})
+    return {"tested": 120 * 26, "chance_rate": 0.01, "top": rows, "next": nxt}

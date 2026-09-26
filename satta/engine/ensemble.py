@@ -23,6 +23,11 @@ weights them by how well each predicted. Because every ensemble is linear in
 the experts, the final prediction is again one expert mixture with effective
 weights  w_eff = Σ_g v_g · w_g.
 
+Merge layer: the experts' opinions are merged two ways, a linear pool
+Σ w_i P_i (keeps every expert's doubts) and a geometric pool ∝ Π P_i^(w_i)
+(sharpens where the experts agree). A last Hedge learns how much of each to
+use, so the tool decides from results which way of merging works better.
+
 replay() walks forward through history and at each day uses only the data
 before that day: the backtest is exactly what the live system would have
 predicted on that day.
@@ -66,6 +71,7 @@ class Replay:
     mix_loss: float = 0.0
     grid: list = field(default_factory=list)
     meta: np.ndarray | None = None      # weight of each (eta, alpha) ensemble
+    merge: np.ndarray | None = None     # weight of the linear and the geometric pool
 
 
 def rank_of(p: np.ndarray, v: int) -> int:
@@ -79,6 +85,14 @@ def expert_matrix(sd: SeriesData, experts: list[Expert], i: int, date: dt.date |
     return np.stack([e.predict(ctx) for e in experts])
 
 
+def pools(w: np.ndarray, P: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Linear pool Σ w_i P_i and geometric pool ∝ exp(Σ w_i log P_i)."""
+    lin = w @ P
+    lg = w @ np.log(np.maximum(P, 1e-12))
+    geo = np.exp(lg - lg.max())
+    return lin, geo / geo.sum()
+
+
 def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | None = None,
            grid: list[tuple[float, float]] | None = None) -> Replay:
     experts = experts or default_experts()
@@ -90,12 +104,17 @@ def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | Non
     W = np.full((g, k), 1.0 / k)   # expert weights inside each ensemble
     v = np.full(g, 1.0 / g)        # meta weights over the ensembles
     losses = np.zeros(k)
+    u = np.array([0.5, 0.5])        # linear vs geometric merge
     rep = Replay(sd.market, experts, grid=grid)
     for i in range(start, sd.n):
         P = expert_matrix(sd, experts, i)
         w = v @ W
-        mix = w @ P
+        lin, geo = pools(w, P)
+        mix = u[0] * lin + u[1] * geo
         y = int(sd.y[i])
+        u = u * np.array([lin[y], geo[y]])
+        u /= u.sum()
+        u = (1 - META_ALPHA) * u + META_ALPHA / 2
         pa = np.maximum(P[:, y], 1e-300)
         losses -= np.log(pa)
         rep.mix_loss -= math.log(max(float(mix[y]), 1e-300))
@@ -111,6 +130,7 @@ def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | Non
         rep.steps.append(Step(sd.dates[i], y, mix, w, nw, pa, ranks, P.mean(axis=0)))
     rep.weights = v @ W
     rep.meta = v
+    rep.merge = u
     rep.losses = losses
     return rep
 
@@ -118,7 +138,9 @@ def replay(sd: SeriesData, experts: list[Expert] | None = None, start: int | Non
 def predict_next(sd: SeriesData, rep: Replay, date: dt.date) -> tuple[np.ndarray, np.ndarray]:
     """(final distribution, expert matrix) for the next unknown draw on `date`."""
     P = expert_matrix(sd, rep.experts, sd.n, date)
-    return rep.weights @ P, P
+    lin, geo = pools(rep.weights, P)
+    u = rep.merge if rep.merge is not None else np.array([1.0, 0.0])
+    return u[0] * lin + u[1] * geo, P
 
 
 # ------------------------------------------------------------- summaries

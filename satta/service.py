@@ -211,6 +211,8 @@ def _progress(rep: Replay, window: int = 50) -> dict | None:
     return {
         "window": w,
         "tuning": tuning,
+        "merge": ({"linear": _r(float(rep.merge[0])), "geometric": _r(float(rep.merge[1]))}
+                  if rep.merge is not None else None),
         "learned": _clean(summarize(learned)),
         "equal": _clean(summarize(equal)),
         "best_expert": {"label": rep.experts[best].label,
@@ -350,6 +352,34 @@ def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=No
     return payload, (new, rep)
 
 
+def _nothing_to_lock(table: dict, preds: list[dict], now: dt.datetime) -> bool:
+    """True when every market's next draw already has a locked prediction."""
+    have = {(p["market"], p["date"]) for p in preds}
+    for m in config.MARKET_KEYS:
+        sd = SeriesData(table, m)
+        if sd.n >= MIN_DATA and (m, next_target_date(m, sd, now).isoformat()) not in have:
+            return False
+    return True
+
+
+def _refresh_only(dash: dict, sync_info, now: dt.datetime) -> dict:
+    """Fast path when no result changed: keep all analysis, update times and statuses."""
+    for m, payload in dash.get("markets", {}).items():
+        for row in (payload.get("live") or {}).get("rows", []):
+            if row.get("status") == "pending":
+                d = dt.date.fromisoformat(row["date"])
+                if now.astimezone(config.IST) > config.result_datetime(m, d) + dt.timedelta(days=2):
+                    row["status"] = "no-result"
+    dash["generated_at"] = now.astimezone(config.IST).isoformat(timespec="seconds")
+    if sync_info is not None:
+        dash["sync"] = sync_info
+    (config.DATA_DIR / "dashboard.json").write_text(
+        json.dumps(_clean(dash), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    return {"generated_at": dash["generated_at"], "new_predictions": [], "fast_path": True,
+            "results": sum(m.get("n_results", 0) for m in dash.get("markets", {}).values()),
+            "sync": {k: v for k, v in (sync_info or {}).items() if k != "conflicts"}}
+
+
 def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = True) -> dict:
     with _lock:
         now = now or config.now_ist()
@@ -369,6 +399,8 @@ def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = T
         thash = table_hash(table)
         prev = load_dashboard() or {}
         same = prev.get("engine") == config.ENGINE_VERSION and prev.get("data_hash") == thash
+        if same and _nothing_to_lock(table, preds, now):
+            return _refresh_only(prev, sync_info, now)
         markets, created = {}, []
         for m in config.MARKET_KEYS:
             old = (prev.get("markets") or {}).get(m) or {}
