@@ -234,7 +234,7 @@ def score(dist: np.ndarray, actual: int) -> dict:
 
 
 def postmortem(step: Step, experts: list[Expert], official: dict | None = None,
-               top10: list[int] | None = None) -> dict:
+               top10: list[int] | None = None, list_source: str | None = None) -> dict:
     """Why the prediction hit or missed, and what the system learned (Hinglish).
 
     official/top10 are the locked live prediction's score and list, when there is one.
@@ -255,7 +255,9 @@ def postmortem(step: Step, experts: list[Expert], official: dict | None = None,
     near = [v for v in top10 if v in (int((a % 10) * 10 + a // 10), (a + 1) % 100, (a - 1) % 100)]
     if near and not sc["hit10"]:
         lines.append(f"Kareeb: top-10 me {', '.join(f'{v:02d}' for v in near)} tha (palti/±1).")
-    if step.chosen >= 0:
+    if list_source:
+        lines.append(f"Is din ki Top-10 list: {list_source}.")
+    elif step.chosen >= 0:
         src = "Ensemble (sab models ka merge)" if step.chosen == len(experts) else experts[step.chosen].label
         lines.append(f"Is din ki Top-10 list: {src} (Top-10 selector ne chuni).")
     best = int(np.argmin(step.ranks))

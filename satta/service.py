@@ -307,7 +307,8 @@ def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.date
                        andar_hit=sc["andar_hit"], bahar_hit=sc["bahar_hit"])
             step = steps.get(p["date"])
             if step is not None:
-                row["why"] = postmortem(step, rep.experts, sc, row["top10"])["lines"]
+                source = p.get("model") or f"engine {p.get('engine', '?')} (Top-10 selector se pehle)"
+                row["why"] = postmortem(step, rep.experts, sc, row["top10"], source)["lines"]
             if not p.get("late") and row["verified"]:
                 scores.append(sc)
         rows.append(row)

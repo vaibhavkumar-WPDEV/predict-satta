@@ -18,7 +18,8 @@ async function load() {
     state.mode = "static";
     for (const url of ["../data/dashboard.json", "data/dashboard.json"]) {
       try {
-        const r = await fetch(url, { cache: "no-store" });
+        // a unique query string skips GitHub Pages' ~10 minute CDN cache
+        const r = await fetch(`${url}?t=${Date.now()}`, { cache: "no-store" });
         if (r.ok) { dash = await r.json(); break; }
       } catch (_) { /* try next */ }
     }
