@@ -58,11 +58,12 @@ function fmtTime(iso) {
 
 function renderMarketBar() {
   const bar = $("#marketBar");
-  const show = !["today", "chart", "help"].includes(state.tab);
+  const show = !["chart", "help"].includes(state.tab);
   bar.style.display = show ? "flex" : "none";
-  bar.innerHTML = Object.values(state.dash.markets)
-    .map((m) => `<button data-m="${m.key}" class="${m.key === state.market ? "active" : ""}">${esc(m.name)} (${esc(m.short)})</button>`)
-    .join("");
+  bar.innerHTML = `<span class="muted small" style="align-self:center">Market chuno:</span>` +
+    Object.values(state.dash.markets)
+      .map((m) => `<button data-m="${m.key}" class="${m.key === state.market ? "active" : ""}">${esc(m.name)} (${esc(m.short)})</button>`)
+      .join("");
   bar.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { state.market = b.dataset.m; render(); }));
 }
 
@@ -81,6 +82,7 @@ function predictionCard(m, hero) {
       : "Prediction abhi lock nahi hui.";
     const r = lastEvaluated(m);
     return `<div class="card ${hero ? "hero" : ""}"><h2>${esc(m.name)} <span class="muted">(${esc(m.short)})</span></h2>
+      ${hero ? "" : `<button class="btn small-btn" data-pick="${m.key}">Poora detail dekho →</button>`}
       <p>⏳ ${msg}</p>
       ${r ? `<div class="muted small">Pichla result (${esc(r.date)}): <b>${jd(r.actual)}</b> ${resultPill(r)}</div>` : ""}</div>`;
   }
@@ -97,6 +99,7 @@ function predictionCard(m, hero) {
       <h2>${esc(m.name)} <span class="muted">(${esc(m.short)})</span></h2>
       <span class="pill ${p.late ? "bad" : "good"}">${p.late ? "LATE (result ke baad bani)" : "LOCKED before result"}</span>
     </div>
+    ${hero ? "" : `<button class="btn small-btn" data-pick="${m.key}">Poora detail dekho →</button>`}
     <div class="row"><span class="big">Result date</span> <b>${esc(p.date)}</b>
       <span class="big">· time ~${esc(m.result_time)} IST</span></div>
     ${hero ? `<div class="countdown" data-until="${esc(p.result_time)}"></div>` : ""}
@@ -126,8 +129,9 @@ function predictionCard(m, hero) {
 function renderToday() {
   const d = state.dash;
   const ms = Object.values(d.markets);
-  const primary = d.markets[d.primary];
-  const others = ms.filter((m) => m.key !== d.primary);
+  // the chosen market gets the full view (big card, honest check, percentage table)
+  const primary = d.markets[state.market] || d.markets[d.primary];
+  const others = ms.filter((m) => m.key !== primary.key);
   let banner = "";
   if (primary && primary.ready) {
     const h = primary.backtest.all.hit10;
@@ -152,6 +156,11 @@ function renderToday() {
     `<div class="grid">${others.map((m) => predictionCard(m, false)).join("")}</div>`;
   const rate = $("#payRate");
   if (rate) rate.addEventListener("change", (e) => { state.rate = Number(e.target.value) || 90; renderToday(); });
+  document.querySelectorAll("#tab-today [data-pick]").forEach((b) => b.addEventListener("click", () => {
+    state.market = b.dataset.pick;
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }));
   tickCountdown();
 }
 

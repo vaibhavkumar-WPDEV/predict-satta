@@ -125,6 +125,7 @@ pre {
 }
 .banner.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }
 .small { font-size: 12px; }
+.small-btn { padding: 5px 10px; font-size: 12px; margin: 2px 0 8px; }
 .status-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .status-cell { background: var(--panel-2); border-radius: 10px; padding: 10px 12px; }
 .status-cell .big { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 4px 0; }

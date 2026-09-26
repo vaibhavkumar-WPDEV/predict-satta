@@ -216,22 +216,24 @@ def _parse_date_list(rows, year, month, market):
 
 # ------------------------------------------------------------------ fetch
 
-def _get(url: str, session: requests.Session, tries: int = 2) -> tuple[str | None, str]:
-    """(html, status) with status "ok", "missing" (page does not exist) or "error"."""
+def _get(url: str, session: requests.Session, tries: int = 3) -> tuple[str | None, str]:
+    """(html, status) with status "ok", "missing" (page does not exist) or "error".
+
+    Busy sites often answer a first request with 403/5xx or time out, so errors
+    are retried with a growing pause.
+    """
     for attempt in range(tries):
         try:
-            resp = session.get(url, timeout=25, headers={"User-Agent": UA, "Accept-Language": "en-IN,en"})
+            resp = session.get(url, timeout=30, headers={"User-Agent": UA, "Accept-Language": "en-IN,en"})
             if resp.status_code == 200 and resp.text:
                 return resp.text, "ok"
             log.warning("GET %s -> HTTP %s", url, resp.status_code)
             if resp.status_code in (404, 410):
                 return None, "missing"
-            if resp.status_code == 403:
-                return None, "error"
         except requests.RequestException as exc:
             log.warning("GET %s failed: %s", url, exc)
         if attempt + 1 < tries:
-            time.sleep(2)
+            time.sleep(3 * (attempt + 1))
     return None, "error"
 
 
