@@ -392,7 +392,7 @@ function renderLearning() {
       <td class="num">${pct(e.hit10_rate)}</td><td class="num">${e.avg_logloss ?? "–"}</td></tr>`).join("");
   const versions = (state.dash.versions || []).map((v) => `<tr><td><b>${esc(v.version)}</b><br><small class="muted">${esc(v.date)}</small></td>
       <td>${esc(v.change)}<br><small class="muted">${esc(v.span)}</small></td>
-      ${["disawar", "faridabad", "ghaziabad", "gali"].map((k) => `<td class="num">${v.top10 && v.top10[k] != null ? v.top10[k].toFixed(1) + "%" : "–"}</td>`).join("")}</tr>`).join("");
+      ${["disawar", "faridabad", "ghaziabad", "gali", "all"].map((k) => `<td class="num">${v.top10 && v.top10[k] != null ? v.top10[k].toFixed(k === "all" ? 2 : 1) + "%" : "–"}</td>`).join("")}</tr>`).join("");
   const pg = m.progress;
   const sb = m.selfbreak;
   const cmp = (s) => (s && s.n ? `${pct(s.hit10.rate)} top-10 · avg rank ${s.mean_rank.value.toFixed(1)} · log-loss ${s.logloss.value.toFixed(3)}` : "–");
@@ -439,8 +439,8 @@ function renderLearning() {
       <tbody>${rows}</tbody></table>
       <p class="muted small">Strong: p&lt;0.01 aur data ke dono aadhon me &gt;10.5% · Moderate: p&lt;0.05 aur dono aadhe &gt;10% · Weak: 10% se upar par sabit nahi · Unreliable: random ya usse kam.</p></div>
     <div class="card table-wrap"><h2>Engine versions: kya badla, kitna sudhra</h2>
-      <p class="muted">Walk-forward Top-10 hit-rate (har din sirf pichle data se). Random = 10%.</p>
-      <table><thead><tr><th>Version</th><th>Badlaav</th><th class="num">DSWR</th><th class="num">FRBD</th><th class="num">GZBD</th><th class="num">GALI</th></tr></thead>
+      <p class="muted">Har version ka code same 5 saal ke data par dobara chalaya (walk-forward, har din sirf pichle data se). Random = 10%.</p>
+      <table><thead><tr><th>Version</th><th>Badlaav</th><th class="num">DSWR</th><th class="num">FRBD</th><th class="num">GZBD</th><th class="num">GALI</th><th class="num">Chaaron</th></tr></thead>
       <tbody>${versions}</tbody></table></div>`;
   drawWeights(m);
 }
