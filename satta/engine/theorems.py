@@ -96,6 +96,26 @@ def findings(sd: SeriesData, replay=None, n_experts: int | None = None) -> list[
                 f"H0: {m.title()} ka {when} ka {dname} digit, is market ke {dname} digit ko affect nahi karta.",
                 f"χ²={chi:.1f}, dof={dof}, n={int(ok.sum())}", chi2_sf(chi, dof))
 
+    # symbolic hypotheses, tested like everything else
+    from .symbolic import RULES, rule_table, tithi
+
+    tt = np.array([tithi(d) for d in sd.dates]) - 1
+    M = np.zeros((30, 10))
+    np.add.at(M, (tt, t), 1)
+    M = M[M.sum(1) > 0][:, M.sum(0) > 0]
+    E = np.outer(M.sum(1), M.sum(0)) / M.sum()
+    chi = float(((M - E) ** 2 / E).sum())
+    dof = (M.shape[0] - 1) * (M.shape[1] - 1)
+    add("T11", "Chandra tithi → andar (χ²)",
+        "H0: chandra ki tithi (1-30) ka andar digit par koi asar nahi.",
+        f"χ²={chi:.1f}, dof={dof}, n={n}", chi2_sf(chi, dof))
+    R = rule_table(sd.dates)
+    hits = int((R == y[:, None]).sum())
+    trials = R.size
+    add("T12", "Numerology rules (14 rules)",
+        "H0: tareekh/mulank/bhagyank/tithi se bane numbers random jitne hi (1%) sahi hote hain.",
+        f"{hits}/{trials} = {hits / trials:.2%} (random 1%)", binom_sf(hits, trials, 0.01))
+
     counts = np.bincount(y, minlength=100)
     p = counts[counts > 0] / n
     h = float(-(p * np.log2(p)).sum() + (len(p) - 1) / (2 * n * math.log(2)))

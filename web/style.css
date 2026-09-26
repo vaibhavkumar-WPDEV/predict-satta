@@ -144,3 +144,5 @@ footer { text-align: center; font-size: 12px; padding: 20px; }
   .jodi b { font-size: 18px; }
   .brand p { display: none; }
 }
+
+table.report td:first-child { white-space: nowrap; font-size: 12px; width: 1%; }

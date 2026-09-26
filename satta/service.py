@@ -89,8 +89,13 @@ def next_target_date(market: str, sd: SeriesData, now: dt.datetime) -> dt.date:
 
 def make_prediction(sd: SeriesData, rep: Replay, date: dt.date, now: dt.datetime,
                     formula_report: dict | None = None) -> dict:
-    mix, _ = predict_next(sd, rep, date)
+    mix, P = predict_next(sd, rep, date)
     at, ab = andar_bahar(mix)
+    final = {v for v, _ in top_list(mix)}
+    overlap = [len(final & {v for v, _ in top_list(P[i])}) for i in range(len(rep.experts))]
+    by_weight = np.argsort(-rep.weights)
+    support = [rep.experts[i].label for i in by_weight if overlap[i] >= 3][:4]
+    contra = [rep.experts[i].label for i in by_weight if overlap[i] == 0 and rep.weights[i] >= 0.02][:3]
     rt = config.result_datetime(sd.market, date)
     order = np.argsort(-rep.weights)[:6]
     pred = {
@@ -108,6 +113,8 @@ def make_prediction(sd: SeriesData, rep: Replay, date: dt.date, now: dt.datetime
         "dist": [round(float(x), 5) for x in mix],
         "experts": [[rep.experts[i].label, round(float(rep.weights[i]), 4)] for i in order],
         "model": candidate_label(rep, selected(rep)),
+        "support": support,
+        "contra": contra,
     }
     if formula_report and formula_report.get("ready"):
         pred["formulas"] = [f"{f['formula']} → {f['value']:02d}"
@@ -141,14 +148,22 @@ def _weights_history(rep: Replay, keep: int = 8) -> dict:
 def _experts_table(rep: Replay) -> list[dict]:
     out = []
     n = len(rep.steps)
+    from .engine.stats import binom_sf
+
     for i, e in enumerate(rep.experts):
         ranks = np.array([s.ranks[i] for s in rep.steps]) if n else np.array([])
+        quality = None
+        if n >= 100:
+            hits = ranks <= 10
+            quality = signal_quality(float(hits.mean()), binom_sf(int(hits.sum()), n, 0.1),
+                                     float(hits[: n // 2].mean()), float(hits[n // 2:].mean()))
         out.append({
             "name": e.name, "label": e.label, "theory": e.theory,
             "weight": _r(rep.weights[i]),
             "mean_rank": _r(ranks.mean(), 2) if n else None,
             "hit10_rate": _r((ranks <= 10).mean()) if n else None,
             "avg_logloss": _r(rep.losses[i] / n) if n else None,
+            "quality": quality,
         })
     out.sort(key=lambda r: -(r["weight"] or 0))
     return out
@@ -198,6 +213,103 @@ def _coverage(rep: Replay) -> dict | None:
         "andar": [{"k": k, "tested": _r((a_ranks <= k).mean()), "random": k / 10} for k in (1, 2, 3, 5)],
         "bahar": [{"k": k, "tested": _r((b_ranks <= k).mean()), "random": k / 10} for k in (1, 2, 3, 5)],
     }
+
+
+def signal_quality(rate: float, p: float, r1: float, r2: float) -> str:
+    """Strong / Moderate / Weak / Unreliable from the walk-forward Top-10 record."""
+    if p < 0.01 and min(r1, r2) > 0.105:
+        return "Strong"
+    if p < 0.05 and min(r1, r2) > 0.10:
+        return "Moderate"
+    if rate > 0.10:
+        return "Weak"
+    return "Unreliable"
+
+
+def _wilson(k: int, n: int, z: float = 1.645) -> tuple[float, float]:
+    if n == 0:
+        return 0.0, 1.0
+    p = k / n
+    d = 1 + z * z / n
+    c = (p + z * z / (2 * n)) / d
+    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return max(0.0, c - h), min(1.0, c + h)
+
+
+def _binom_quantiles(n: int, p: float, lo: float = 0.05, hi: float = 0.95) -> tuple[int, int]:
+    cdf, a, b = 0.0, None, None
+    for k in range(n + 1):
+        cdf += math.comb(n, k) * p ** k * (1 - p) ** (n - k)
+        if a is None and cdf >= lo:
+            a = k
+        if b is None and cdf >= hi:
+            b = k
+            break
+    return a or 0, b if b is not None else n
+
+
+def _decision(rep: Replay) -> dict | None:
+    """PASS/NO-EDGE: is there a validated Top-10 edge for this market, and how big?"""
+    from .engine.stats import binom_sf
+
+    steps = rep.steps
+    n = len(steps)
+    if n < 100:
+        return None
+    hits = np.array([rank_of(s.mix, s.actual) <= 10 for s in steps])
+    k = int(hits.sum())
+    p = binom_sf(k, n, 0.1)
+    r1, r2 = float(hits[: n // 2].mean()), float(hits[n // 2:].mean())
+    level = signal_quality(k / n, p, r1, r2)
+    recent = hits[-730:]
+    rate = float(recent.mean())
+    lo, hi = _wilson(int(recent.sum()), len(recent))
+    q05, q95 = _binom_quantiles(30, rate)
+    edge = level in ("Strong", "Moderate")
+    return {
+        "verdict": "EDGE" if edge else "NO EDGE",
+        "level": level,
+        "confidence": {"Strong": "High", "Moderate": "Medium", "Weak": "Low", "Unreliable": "None"}[level],
+        "text": ("Tested edge: tool ki Top-10 random se behtar sabit hui hai." if edge else
+                 "Insufficient predictive edge: tool ki Top-10 random (10%) se behtar sabit nahi hui."),
+        "prob": _r(rate), "prob_lo": _r(lo), "prob_hi": _r(hi), "prob_days": int(len(recent)),
+        "all_rate": _r(k / n), "all_n": n, "p_value": _r(p, 6), "half1": _r(r1), "half2": _r(r2),
+        "mc30": {"expected": _r(30 * rate, 1), "lo": q05, "hi": q95,
+                 "random": {"expected": 3.0, "lo": _binom_quantiles(30, 0.1)[0], "hi": _binom_quantiles(30, 0.1)[1]}},
+    }
+
+
+def _arrival(market: str, rows: list[dict]) -> dict:
+    """When results actually show up on the sources (from the watcher's first-seen times)."""
+    delays = []
+    for r in rows:
+        if r["market"] != market:
+            continue
+        try:
+            seen = dt.datetime.fromisoformat(r["fetched_at"])
+            nominal = config.result_datetime(market, dt.date.fromisoformat(r["date"]))
+        except (TypeError, ValueError):
+            continue
+        if seen.tzinfo is None:
+            continue
+        minutes = (seen - nominal).total_seconds() / 60
+        if -120 <= minutes <= 360:
+            delays.append(minutes)
+    out = {"n": len(delays), "nominal": config.MARKETS[market]["result_time"]}
+    if len(delays) < 3:
+        out["note"] = "Abhi kam data (watcher ne kuch hi din result aate dekhe hain)."
+        return out
+    hh, mm = (int(x) for x in config.MARKETS[market]["result_time"].split(":"))
+    base = dt.datetime(2000, 1, 1, hh, mm)
+
+    def clock(minutes):
+        return (base + dt.timedelta(minutes=float(minutes))).strftime("%H:%M")
+
+    q = np.percentile(delays, [10, 50, 90])
+    out.update(earliest=clock(min(delays)), p10=clock(q[0]), median=clock(q[1]), p90=clock(q[2]),
+               latest=clock(max(delays)),
+               note="Tool ke dekhe hue samay (watcher har 10 min check karta hai, isliye ±10 min).")
+    return out
 
 
 def _progress(rep: Replay, window: int = 50) -> dict | None:
@@ -288,7 +400,20 @@ def self_break(table: dict, market: str, shuffles: int = 3, last: int = 150) -> 
     })
 
 
-def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.datetime) -> dict:
+def _random_or_systematic(hit: bool, decision: dict | None, rep: Replay) -> str:
+    rate = (decision or {}).get("prob") or 0.10
+    last = [rank_of(s.mix, s.actual) <= 10 for s in rep.steps[-30:]]
+    k, n = sum(last), len(last)
+    if not hit and n and k <= _binom_quantiles(n, rate, 0.01, 0.99)[0] and k < n * rate:
+        return (f"Random ya systematic? Pichle {n} din me sirf {k} hit (umeed ~{n * rate:.0f}) — "
+                "yeh random se zyada kharab hai, tool is market ka model dobara jaanchega.")
+    return (f"Random ya systematic? Is list ka tested chance ~{rate:.0%} tha, isliye "
+            f"{'hit' if hit else 'miss'} hona is chance ke andar hai (random variance). "
+            f"Pichle {n} din: {k} hit, umeed ~{n * rate:.0f}.")
+
+
+def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.datetime,
+          decision: dict | None = None) -> dict:
     steps = {s.date.isoformat(): s for s in rep.steps}
     rows, scores = [], []
     for p in sorted((p for p in preds if p["market"] == market), key=lambda p: p["date"], reverse=True):
@@ -309,6 +434,7 @@ def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.date
             if step is not None:
                 source = p.get("model") or f"engine {p.get('engine', '?')} (Top-10 selector se pehle)"
                 row["why"] = postmortem(step, rep.experts, sc, row["top10"], source)["lines"]
+                row["why"].append(_random_or_systematic(bool(sc["hit10"]), decision, rep))
             if not p.get("late") and row["verified"]:
                 scores.append(sc)
         rows.append(row)
@@ -373,6 +499,8 @@ def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=No
         "waiting": wait_info,
         "backtest": _backtest(rep),
         "coverage": _coverage(rep),
+        "decision": _decision(rep),
+        "arrival": _arrival(market, storage.load_result_rows()),
         "live": None,  # filled by caller once new predictions are appended
         "weights": _weights_history(rep),
         "progress": _progress(rep),
@@ -443,6 +571,19 @@ def _refresh_only(dash: dict, sync_info, now: dt.datetime) -> dict:
             "sync": {k: v for k, v in (sync_info or {}).items() if k != "conflicts"}}
 
 
+def _versions(markets: dict) -> list[dict]:
+    from .engine.versions import VERSIONS
+
+    out = []
+    for v in VERSIONS:
+        row = dict(v)
+        if row["top10"] is None and row["version"] == config.ENGINE_VERSION:
+            row["top10"] = {m: _r(100 * p["decision"]["all_rate"], 1)
+                            for m, p in markets.items() if p.get("decision")}
+        out.append(row)
+    return out
+
+
 def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = True) -> dict:
     with _lock:
         now = now or config.now_ist()
@@ -476,7 +617,7 @@ def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = T
                 preds.append(extra[0])
                 created.append(f"{m} {extra[0]['date']}")
             if extra:
-                payload["live"] = _live(m, preds, table, extra[1], now)
+                payload["live"] = _live(m, preds, table, extra[1], now, payload.get("decision"))
             markets[m] = payload
 
         dash = {
@@ -486,6 +627,7 @@ def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = T
             "code_hash": CODE_HASH,
             "primary": config.PRIMARY_MARKET,
             "history_start": config.HISTORY_START.isoformat(),
+            "versions": _versions(markets),
             "sync": sync_info,
             "markets": markets,
             "results": results_table(table),

@@ -117,8 +117,34 @@ def _onehot_features(sd, F: dict) -> np.ndarray:
             cols.append(oh.astype(float))
     wd = np.asarray(F["WD"])
     cols.append((wd[:, None] == np.arange(7)[None, :]).astype(float))
+    # cyclical time: sin/cos keep 31 → 1, Dec → Jan, Sun → Mon next to each other
+    dm, mo = np.asarray(F["DM"], float), np.asarray(F["MO"], float)
+    for value, period in ((dm, 31.0), (mo, 12.0), (wd.astype(float), 7.0)):
+        cols.append(np.stack([np.sin(2 * np.pi * value / period), np.cos(2 * np.pi * value / period)], axis=1))
     cols.append(np.ones((len(wd), 1)))
     return np.concatenate(cols, axis=1)
+
+
+class Symbolic(Expert):
+    name = "symbolic"
+    label = "Numerology + Chandra tithi (symbolic hypothesis)"
+    theory = ("Tareekh, mahina, saal, mulank, bhagyank aur chandra tithi se bane 14 rules (jaise "
+              "'mulank x2', 'DD+MM', 'tithi'). Har rule ka asli purana hit-rate uska weight tay karta "
+              "hai. Vaigyanik saboot nahi — sirf data par test kiya jaane wala hypothesis.")
+
+    def predict(self, ctx: Context):
+        from . import symbolic
+        from .experts import rule_mixture
+
+        sd = ctx.sd
+        if "sym" not in sd.cache:
+            sd.cache["sym"] = symbolic.rule_table(sd.dates)
+        R = sd.cache["sym"]
+        if ctx.i < 60:
+            return UNIFORM.copy()
+        cur = symbolic.candidates(ctx.date)
+        rules = [(R[: ctx.i, j], cur[name]) for j, name in enumerate(symbolic.RULES)]
+        return rule_mixture(rules, ctx.y)
 
 
 class HotPool(Expert):
@@ -209,7 +235,8 @@ class NeuralNet(Expert):
 
     name = "neural_net"
     label = "Neural network (online, 32 neurons)"
-    theory = ("Input: pichle 2 draws + doosre markets ke kal ke andar/bahar (one-hot) + weekday. "
+    theory = ("Input: pichle 2 draws + doosre markets ke kal/aaj ke andar/bahar (one-hot) + weekday + "
+              "tareekh/mahina/din ke sin-cos (cyclical time). "
               "Hidden: 32 tanh neurons. Output: do softmax (andar, bahar). Har naye result par SGD + "
               "4 purane samples ka replay, L2 regularisation. P = 0.7·outer(andar, bahar) + 0.3·uniform.")
     H = 32

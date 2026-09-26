@@ -153,6 +153,22 @@ Test me: jo model hamesha 1 se chookta tha, uske saath tool ne "+1" seekh kar 10
 - **5 saal ka walk-forward nateeja (engine 3.2):** Disawar 11.4% (p = 0.02), Gali 10.7%,
   Ghaziabad 10.0%, Faridabad 9.5% — random 10%. Engine 3.1 par sab 8.7–9.3% the.
 
+### 4.2a6 Decision engine, calibration, symbolic layer (engine 3.3)
+
+- **Signal quality** har model ka: Strong (p<0.01, dono aadhon me >10.5%), Moderate (p<0.05,
+  dono >10%), Weak (10% se upar par sabit nahi), Unreliable.
+- **EDGE / NO EDGE:** market ki final Top-10 ka 5 saal ka walk-forward record Strong/Moderate ho
+  tabhi "EDGE", warna "Insufficient predictive edge". Abhi: Disawar EDGE (Moderate, 11.4%,
+  dono aadhe 11.4%), Faridabad / Ghaziabad / Gali NO EDGE.
+- **Calibrated probability:** list me asli number aane ka chance = pichle 730 din ka tested
+  hit-rate + 90% Wilson range (model ke apne dawe ki jagah).
+- **Monte Carlo (binomial):** agle 30 din me kitne hit ki ummeed, random se tulna.
+- **Numerology + Chandra tithi:** 14 rules (mulank, bhagyank, DD+MM, tithi …) — asli data par
+  0.83–0.94% sahi (random 1%), tithi ka andar par asar nahi (T11/T12). Weight data tay karta hai.
+- **Cyclical time** (sin/cos of tareekh, mahina, din) neural network me.
+- **Arrival window:** watcher ke dekhe samay se "result aam taur par kab aata hai".
+- Mausam ka data uplabdh nahi; tarot random hai — dono use nahi hote.
+
 ### 4.2b Khud ko todo + seekhne ka asar
 
 - **Shuffle test:** engine ko 3 baar aisi history par chalaya jaata hai jisme dates ka order

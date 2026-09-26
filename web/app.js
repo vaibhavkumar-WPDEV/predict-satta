@@ -125,7 +125,46 @@ function predictionCard(m, hero) {
       <span class="pill info">Asli test (bina result dekhe, ${bt.n || 0} din): top-10 ${pct(bt.hit10?.rate)}, exact ${pct(bt.hit1?.rate)} ${pv(bt.hit10?.p_value)}</span>
       <span class="pill info">Live top-10: ${lv.n ? pct(lv.hit10.rate) + ` (${lv.hit10.hits}/${lv.n})` : "abhi data nahi"}</span>
     </div>
+    ${hero ? predictionReport(m, p) : decisionLine(m)}
   </div>`;
+}
+
+const QUALITY_CLS = { Strong: "good", Moderate: "good", Weak: "warn", Unreliable: "bad" };
+
+function decisionLine(m) {
+  const dc = m.decision;
+  if (!dc) return "";
+  return `<div class="row" style="margin-top:6px"><span class="pill ${dc.verdict === "EDGE" ? "good" : "bad"}">${esc(dc.verdict)} · confidence ${esc(dc.confidence)}</span>
+    <span class="pill">Top-10 ka tested chance ${pct(dc.prob)}</span></div>`;
+}
+
+// Structured report: calibrated probability, decision, signals, version, what would change.
+function predictionReport(m, p) {
+  const dc = m.decision;
+  if (!dc) return "";
+  const ar = m.arrival || {};
+  const when = ar.median
+    ? `~${esc(ar.median)} IST (aam taur par ${esc(ar.p10)}–${esc(ar.p90)}, ${ar.n} din ke data se)`
+    : `~${esc(m.result_time)} IST (arrival data abhi kam: ${ar.n || 0} din)`;
+  const mc = dc.mc30;
+  const row = (k, v) => `<tr><td class="muted">${k}</td><td>${v}</td></tr>`;
+  const old = p.engine !== state.dash.engine;
+  const oldNote = old ? ` <span class="pill warn">Yeh list purane engine ${esc(p.engine)} ki hai (upgrade se pehle lock hui); upar ke test-numbers engine ${esc(state.dash.engine)} ke hain.</span>` : "";
+  return `<h3>Prediction report</h3>
+    <div class="table-wrap"><table class="report">
+      ${row("PREDICTION", `Top-10: <b class="mono">${p.top10.map(([v]) => jd(v)).join(" ")}</b> · Andar ${p.andar.map(([d]) => d).join("/")} · Bahar ${p.bahar.map(([d]) => d).join("/")}`)}
+      ${row("DECISION", `<span class="pill ${dc.verdict === "EDGE" ? "good" : "bad"}">${esc(dc.verdict)}</span> ${esc(dc.text)}`)}
+      ${row("PROBABILITY (calibrated)", `Asli number is Top-10 me aane ka chance <b>${pct(dc.prob)}</b> (90% range ${pct(dc.prob_lo)}–${pct(dc.prob_hi)}), pichle ${dc.prob_days} din ke walk-forward test se. Random: 10%.`)}
+      ${row("CONFIDENCE", `<b>${esc(dc.confidence)}</b> — signal quality ${esc(dc.level)} (poore ${dc.all_n} din: ${pct(dc.all_rate)}, ${pv(dc.p_value)}; pehla aadha ${pct(dc.half1)}, doosra ${pct(dc.half2)})`)}
+      ${row("PREDICTED DATE / TIME", `${esc(p.date)} · ${when}`)}
+      ${row("CURRENT TIMESTAMP", `${fmtTime(state.dash.generated_at)} (Asia/Kolkata, UTC+05:30)`)}
+      ${row("KEY SIGNAL (list ka model)", esc(p.model || `Engine ${p.engine} ka ensemble (Top-10 selector se pehle)`))}
+      ${row("SUPPORTING MODELS", p.support ? (p.support.map(esc).join(", ") || "koi nahi") : "is purani prediction ke saath record nahi hua")}
+      ${row("CONTRADICTING MODELS", p.contra ? (p.contra.map(esc).join(", ") || "koi bada virodh nahi") : "is purani prediction ke saath record nahi hua")}
+      ${row("MONTE CARLO (agle 30 din)", `Top-10 ~${mc.expected} baar sahi (90%: ${mc.lo}–${mc.hi}); random se ~${mc.random.expected} (${mc.random.lo}–${mc.random.hi})`)}
+      ${row("MODEL VERSION", `Engine ${esc(p.engine)} (locked ${fmtTime(p.created_at)})${oldNote}`)}
+      ${row("WHAT WOULD CHANGE IT", "Naya result (weights aur selector badalte hain), usi din pehle aane wale market ka result, ya kisi doosre model ki Top-10 ka lagataar behtar record.")}
+    </table></div>`;
 }
 
 function renderToday() {
@@ -348,8 +387,12 @@ function renderLearning() {
   if (!m.ready) { $("#tab-learning").innerHTML = `<div class="card">${esc(m.reason)}</div>`; return; }
   const rows = m.experts.map((e) => `<tr>
       <td><b>${esc(e.label)}</b><div class="muted formula" style="font-size:12px">${esc(e.theory)}</div></td>
+      <td>${e.quality ? `<span class="pill ${QUALITY_CLS[e.quality] || ""}">${esc(e.quality)}</span>` : "–"}</td>
       <td class="num">${pct(e.weight)}</td><td class="num">${e.mean_rank ?? "–"}</td>
       <td class="num">${pct(e.hit10_rate)}</td><td class="num">${e.avg_logloss ?? "–"}</td></tr>`).join("");
+  const versions = (state.dash.versions || []).map((v) => `<tr><td><b>${esc(v.version)}</b><br><small class="muted">${esc(v.date)}</small></td>
+      <td>${esc(v.change)}<br><small class="muted">${esc(v.span)}</small></td>
+      ${["disawar", "faridabad", "ghaziabad", "gali"].map((k) => `<td class="num">${v.top10 && v.top10[k] != null ? v.top10[k].toFixed(1) + "%" : "–"}</td>`).join("")}</tr>`).join("");
   const pg = m.progress;
   const sb = m.selfbreak;
   const cmp = (s) => (s && s.n ? `${pct(s.hit10.rate)} top-10 · avg rank ${s.mean_rank.value.toFixed(1)} · log-loss ${s.logloss.value.toFixed(3)}` : "–");
@@ -391,9 +434,14 @@ function renderLearning() {
       <div id="wchart"></div>
     </div>
     <div class="card table-wrap"><h2>${m.experts.length} models (experts)</h2><table>
-      <thead><tr><th>Model aur uski math</th><th class="num">Weight</th><th class="num">Avg rank<br><small>(random 50.5)</small></th>
+      <thead><tr><th>Model aur uski math</th><th>Signal quality</th><th class="num">Weight</th><th class="num">Avg rank<br><small>(random 50.5)</small></th>
       <th class="num">Top-10 rate<br><small>(random 10%)</small></th><th class="num">Log-loss<br><small>(random 4.605)</small></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`;
+      <tbody>${rows}</tbody></table>
+      <p class="muted small">Strong: p&lt;0.01 aur data ke dono aadhon me &gt;10.5% · Moderate: p&lt;0.05 aur dono aadhe &gt;10% · Weak: 10% se upar par sabit nahi · Unreliable: random ya usse kam.</p></div>
+    <div class="card table-wrap"><h2>Engine versions: kya badla, kitna sudhra</h2>
+      <p class="muted">Walk-forward Top-10 hit-rate (har din sirf pichle data se). Random = 10%.</p>
+      <table><thead><tr><th>Version</th><th>Badlaav</th><th class="num">DSWR</th><th class="num">FRBD</th><th class="num">GZBD</th><th class="num">GALI</th></tr></thead>
+      <tbody>${versions}</tbody></table></div>`;
   drawWeights(m);
 }
 
@@ -486,7 +534,13 @@ function renderTheorems() {
     </div>`).join("");
   $("#tab-theorems").innerHTML = `<div class="card"><h2>${esc(m.name)}: tool ki statistical findings</h2>
     <p class="muted">Har finding asli data par test hoti hai. "PATTERN MILA" tabhi likha jaata hai jab p-value Bonferroni-corrected limit se chhota ho.</p></div>
-    <div class="grid">${cards}</div>`;
+    <div class="grid">${cards}</div>
+    <div class="card"><h2>Jo signals use nahi hue (aur kyun)</h2>
+      <ul class="steps">
+        <li><b>Mausam (temperature, baarish, hawa):</b> uplabdh nahi — koi data source nahi, isliye fake data nahi banaya.</li>
+        <li><b>Tarot:</b> har baar ka card khud random hota hai; ek random cheez doosri random cheez ke baare me kuch nahi bata sakti.</li>
+        <li><b>Grahon ki sthiti (poori kundli):</b> sirf Chandra tithi test ki gayi (T11); baaki grah abhi shamil nahi.</li>
+      </ul></div>`;
 }
 
 // ------------------------------------------------------------------ chart
