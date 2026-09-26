@@ -200,8 +200,12 @@ def score(dist: np.ndarray, actual: int) -> dict:
     }
 
 
-def postmortem(step: Step, experts: list[Expert], official: dict | None = None) -> dict:
-    """Why the prediction hit or missed, and what the system learned (Hinglish)."""
+def postmortem(step: Step, experts: list[Expert], official: dict | None = None,
+               top10: list[int] | None = None) -> dict:
+    """Why the prediction hit or missed, and what the system learned (Hinglish).
+
+    official/top10 are the locked live prediction's score and list, when there is one.
+    """
     sc = official or score(step.mix, step.actual)
     a = step.actual
     lines = []
@@ -214,7 +218,7 @@ def postmortem(step: Step, experts: list[Expert], official: dict | None = None) 
                  + ("tha." if sc["andar_hit"] else "nahi tha."))
     lines.append(("✔" if sc["bahar_hit"] else "✘") + f" Bahar {a % 10} top-3 me "
                  + ("tha." if sc["bahar_hit"] else "nahi tha."))
-    top10 = [v for v, _ in top_list(step.mix)]
+    top10 = top10 if top10 is not None else [v for v, _ in top_list(step.mix)]
     near = [v for v in top10 if v in (int((a % 10) * 10 + a // 10), (a + 1) % 100, (a - 1) % 100)]
     if near and not sc["hit10"]:
         lines.append(f"Kareeb: top-10 me {', '.join(f'{v:02d}' for v in near)} tha (palti/±1).")

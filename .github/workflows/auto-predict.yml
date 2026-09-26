@@ -1,8 +1,11 @@
 name: Auto predict
 
-# Every 30 minutes: fetch new results, score the locked predictions, re-learn the
-# model weights and lock the next predictions. Each commit is a public,
-# timestamped proof that a prediction existed before its result.
+# A watcher: each run keeps fetching new results every 10 minutes for about
+# 5.5 hours, scores the locked predictions, re-learns the model weights and
+# locks the next predictions. GitHub may delay or drop scheduled runs, so the
+# frequent schedule only has to start a run now and then; a new run waits in
+# the queue until the current one ends. Each commit is a public, timestamped
+# proof that a prediction existed before its result.
 on:
   schedule:
     - cron: "17,47 * * * *"
@@ -18,12 +21,14 @@ permissions:
 
 concurrency:
   group: auto-predict
-  cancel-in-progress: false
+  # new code (push) or a manual start replaces a running watcher;
+  # scheduled starts just queue behind it
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
   cycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
@@ -34,25 +39,36 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Fetch -> check -> learn -> predict -> lock
-        run: python -m satta cycle
-
-      - name: Commit new results and locked predictions
+      - name: Watch for results (fetch -> check -> learn -> predict -> lock, every 10 min)
+        env:
+          EVENT: ${{ github.event_name }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           git config user.name "satta-bot"
           git config user.email "satta-bot@users.noreply.github.com"
-          git add -A data/
-          # scheduled runs commit only on a new result or prediction;
-          # a code push also publishes the re-computed dashboard
-          if [ "${{ github.event_name }}" != "push" ] && git diff --cached --quiet -- data/results.csv data/predictions.jsonl; then
-            echo "No new result or prediction."
-            exit 0
-          fi
-          if git diff --cached --quiet; then
-            echo "Nothing changed."
-            exit 0
-          fi
-          git commit -m "auto: results + locked predictions $(TZ=Asia/Kolkata date '+%Y-%m-%d %H:%M IST')"
-          # a code push may have landed meanwhile; data/ commits rebase cleanly on it
-          git pull --rebase origin "${{ github.ref_name }}"
-          git push
+          end=$(( $(date +%s) + 330 * 60 ))
+          first=1
+          while :; do
+            python -m satta cycle || echo "cycle failed, retrying next round"
+            git add -A data/
+            # commit on a new result, a new locked prediction or a new full
+            # re-fetch; the first round after a code push also publishes the
+            # recomputed dashboard
+            if [ "$first" = 1 ] && [ "$EVENT" = "push" ]; then
+              publish=1
+            elif git diff --cached --quiet -- data/results.csv data/predictions.jsonl data/sync_state.json; then
+              publish=0
+            else
+              publish=1
+            fi
+            if [ "$publish" = 1 ] && ! git diff --cached --quiet; then
+              git commit -q -m "auto: results + locked predictions $(TZ=Asia/Kolkata date '+%Y-%m-%d %H:%M IST')"
+              git pull -q --rebase origin "$BRANCH" && git push -q || echo "push failed, retrying next round"
+            else
+              git reset -q
+              git checkout -q -- data/
+            fi
+            first=0
+            [ "$(date +%s)" -ge "$end" ] && break
+            sleep 600
+          done
