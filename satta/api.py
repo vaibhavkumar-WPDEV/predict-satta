@@ -102,6 +102,14 @@ async def results_csv():
     return FileResponse(path, media_type="text/csv", filename="satta-results.csv")
 
 
+@app.get("/api/prediction_history.csv")
+async def prediction_history_csv():
+    path = config.DATA_DIR / "prediction_history.csv"
+    if not path.exists():
+        raise HTTPException(404, "abhi koi locked prediction nahi")
+    return FileResponse(path, media_type="text/csv", filename="satta-prediction-history.csv")
+
+
 @app.get("/api/health")
 async def health():
     return {"ok": True, **_state}

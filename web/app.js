@@ -49,6 +49,7 @@ function render() {
   renderFormulas();
   renderTheorems();
   renderChart();
+  renderHistory();
 }
 
 function fmtTime(iso) {
@@ -59,7 +60,7 @@ function fmtTime(iso) {
 
 function renderMarketBar() {
   const bar = $("#marketBar");
-  const show = !["chart", "help"].includes(state.tab);
+  const show = !["chart", "help", "history"].includes(state.tab);
   bar.style.display = show ? "flex" : "none";
   bar.innerHTML = `<span class="muted small" style="align-self:center">Market chuno:</span>` +
     Object.values(state.dash.markets)
@@ -69,6 +70,16 @@ function renderMarketBar() {
 }
 
 const cur = () => state.dash.markets[state.market];
+const DIGIT_K = 5;
+
+// Andar/Bahar top-5 of a locked prediction: its locked digits first, then the
+// next most likely digits of its locked (hashed) probability list.
+function digitsOf(p) {
+  if (!p.dist) return { andar: p.andar, bahar: p.bahar };
+  const at = Array(10).fill(0), ab = Array(10).fill(0);
+  p.dist.forEach((x, v) => { at[Math.floor(v / 10)] += x; ab[v % 10] += x; });
+  return { andar: ranked(p.andar, at, DIGIT_K), bahar: ranked(p.bahar, ab, DIGIT_K) };
+}
 
 // ------------------------------------------------------------------ today
 function predictionCard(m, hero) {
@@ -94,6 +105,7 @@ function predictionCard(m, hero) {
   const bt = m.backtest.all;
   const lv = m.live.summary;
   const formulas = (p.formulas || []).map((f) => `<div class="formula">${esc(f)}</div>`).join("");
+  const dg = digitsOf(p);
   return `
   <div class="card ${hero ? "hero" : ""}">
     <div class="row" style="justify-content:space-between">
@@ -111,8 +123,8 @@ function predictionCard(m, hero) {
     ${(m.closed_days || []).length ? `<div class="muted" style="font-size:12px">Data se seekha: ${m.closed_days.map((k) => ({ month_end: "mahine ke aakhri din", month_start: "mahine ki 1 tareekh" }[k] || k)).join(", ")} result nahi aata — us din ki prediction nahi banti.</div>` : ""}
     <div class="jodis">${jodis}</div>
     <div class="digits">
-      <span>Andar (pehla digit): ${p.andar.map(([d, pr], i) => `<b>${d}</b>${i === 0 ? "<sup>#1</sup>" : ""}<small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>
-      <span>Bahar (doosra digit): ${p.bahar.map(([d, pr], i) => `<b>${d}</b>${i === 0 ? "<sup>#1</sup>" : ""}<small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>
+      <span>Andar top-5 (pehla digit): ${dg.andar.map(([d, pr], i) => `<b>${d}</b>${i === 0 ? "<sup>#1</sup>" : ""}<small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>
+      <span>Bahar top-5 (doosra digit): ${dg.bahar.map(([d, pr], i) => `<b>${d}</b>${i === 0 ? "<sup>#1</sup>" : ""}<small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>
     </div>
     ${p.model ? `<div class="muted small">Is list ka model (Top-10 selector ne chuna): <b>${esc(p.model)}</b></div>` : ""}
     ${formulas ? `<h3>Tool ke formule (is din ke liye)</h3>${formulas}` : ""}
@@ -149,10 +161,11 @@ function predictionReport(m, p) {
   const mc = dc.mc30;
   const row = (k, v) => `<tr><td class="muted">${k}</td><td>${v}</td></tr>`;
   const old = p.engine !== state.dash.engine;
+  const dg = digitsOf(p);
   const oldNote = old ? ` <span class="pill warn">Yeh list purane engine ${esc(p.engine)} ki hai (upgrade se pehle lock hui); upar ke test-numbers engine ${esc(state.dash.engine)} ke hain.</span>` : "";
   return `<h3>Prediction report</h3>
     <div class="table-wrap"><table class="report">
-      ${row("PREDICTION", `Top-10: <b class="mono">${p.top10.map(([v]) => jd(v)).join(" ")}</b> · Andar ${p.andar.map(([d]) => d).join("/")} · Bahar ${p.bahar.map(([d]) => d).join("/")}`)}
+      ${row("PREDICTION", `Top-10: <b class="mono">${p.top10.map(([v]) => jd(v)).join(" ")}</b> · Andar top-5 ${dg.andar.map(([d]) => d).join("/")} · Bahar top-5 ${dg.bahar.map(([d]) => d).join("/")}`)}
       ${row("DECISION", `<span class="pill ${dc.verdict === "EDGE" ? "good" : "bad"}">${esc(dc.verdict)}</span> ${esc(dc.text)}`)}
       ${row("PROBABILITY (calibrated)", `Asli number is Top-10 me aane ka chance <b>${pct(dc.prob)}</b> (90% range ${pct(dc.prob_lo)}–${pct(dc.prob_hi)}), pichle ${dc.prob_days} din ke walk-forward test se. Random: 10%.`)}
       ${row("CONFIDENCE", `<b>${esc(dc.confidence)}</b> — signal quality ${esc(dc.level)} (poore ${dc.all_n} din: ${pct(dc.all_rate)}, ${pv(dc.p_value)}; pehla aadha ${pct(dc.half1)}, doosra ${pct(dc.half2)})`)}
@@ -236,7 +249,7 @@ function statusStrip(d) {
     } else if (m.next && m.next.date === today) {
       body = `<div class="big">⏳</div><div>~${esc(m.result_time)} IST</div>
         <div class="small" data-until="${esc(m.next.result_time)}"></div>
-        <div class="small">Andar: <b>${m.next.andar.map(([d]) => d).join(" · ")}</b> · Bahar: <b>${m.next.bahar.map(([d]) => d).join(" · ")}</b></div>`;
+        <div class="small">Andar: <b>${digitsOf(m.next).andar.map(([d]) => d).join(" · ")}</b> · Bahar: <b>${digitsOf(m.next).bahar.map(([d]) => d).join(" · ")}</b></div>`;
     } else if (m.waiting && m.waiting.date === today) {
       body = `<div class="big">⏳</div><div>~${esc(m.result_time)} IST</div>
         <div class="muted small">Prediction ${m.waiting.for.length ? esc(m.waiting.for.join(", ")) + " ke aaj ke result ke baad" : "jaldi"} lock hogi</div>`;
@@ -247,7 +260,7 @@ function statusStrip(d) {
       <b>${esc(m.name)}</b><span class="muted small">${esc(m.result_time)} IST</span></div>${body}</div>`;
   }).join("");
   return `<div class="card"><h2>Aaj ke results (${esc(today)})</h2>
-    <p class="muted small">Result aate hi tool khud laata hai (har 30 minute check) aur locked prediction se milata hai. Poori list: Proof (Live) tab.</p>
+    <p class="muted small">Result aate hi tool khud laata hai (har 30 minute check) aur locked prediction se milata hai. Poori list: Proof (Live) aur History tab.</p>
     <div class="status-grid">${cells}</div></div>`;
 }
 
@@ -321,7 +334,7 @@ function summaryStats(s, title) {
       <div class="v">${pct(s[k].rate)}</div>
       <div class="s">${s[k].hits}/${s.n} · random ${pct(s[k].chance, 0)} · ${pv(s[k].p_value)}</div></div>`;
   return `<h3>${esc(title)} (${s.n} din)</h3><div class="grid stats">
-    ${item("hit1", "Exact number")}${item("hit10", "Top-10 me")}${item("andar_hit", "Andar top-3")}${item("bahar_hit", "Bahar top-3")}
+    ${item("hit1", "Exact number")}${item("hit10", "Top-10 me")}${item("andar_hit", "Andar top-5")}${item("bahar_hit", "Bahar top-5")}
     <div class="stat"><div class="s">Average rank of actual</div><div class="v">${s.mean_rank.value.toFixed(1)}</div>
     <div class="s">random 50.5 · ${pv(s.mean_rank.p_value)}</div></div></div>`;
 }
@@ -331,7 +344,7 @@ function whyList(lines) {
   return `<details><summary>kyu? / kya seekha</summary><ul class="why">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></details>`;
 }
 
-// Andar/Bahar cell: the three locked digits, the real digit marked, ✔/✘, and "#1" when the first pick hit.
+// Andar/Bahar cell: the five picked digits, the real digit marked, ✔/✘, and "#1" when the first pick hit.
 function digitCell(digits, actualDigit, hit, first) {
   if (!digits || !digits.length) return "–";
   const ds = digits.map((d, i) => (actualDigit != null && d === actualDigit ? `<span class="hl">${d}</span>` : `${d}`)
@@ -345,7 +358,14 @@ function digitSummary(dg) {
   const card = (k, name) => `<div class="stat"><div class="s">${name}</div>
     <div class="v">${pct(dg[k].hits / dg[k].n)}</div><div class="s">${dg[k].hits}/${dg[k].n} · random ${pct(dg[k].chance, 0)}</div></div>`;
   return `<h3>Andar / Bahar live</h3><div class="grid stats">
-    ${card("andar_hit", "Andar top-3")}${card("bahar_hit", "Bahar top-3")}${card("andar1_hit", "Andar #1 (ek digit)")}${card("bahar1_hit", "Bahar #1 (ek digit)")}</div>`;
+    ${card("andar_hit", "Andar top-5")}${card("bahar_hit", "Bahar top-5")}${card("andar1_hit", "Andar #1 (ek digit)")}${card("bahar1_hit", "Bahar #1 (ek digit)")}</div>`;
+}
+
+// Predictions locked before the top-5 change stored 3 Andar/Bahar digits.
+function threeDigitNote(rows) {
+  const old = rows.filter((r) => r.locked_digits && r.locked_digits < DIGIT_K).map((r) => r.date);
+  if (!old.length) return "";
+  return `<p class="muted small">${[...new Set(old)].sort().map(esc).join(", ")} ki predictions me Andar/Bahar ke ${rows.find((r) => r.locked_digits < DIGIT_K).locked_digits} digit lock hue the; 4th-5th digit usi locked probability list (jiska SHA-256 hash hai) ke agle sabse zyada chance wale digit hain.</p>`;
 }
 
 function renderProof() {
@@ -369,11 +389,12 @@ function renderProof() {
   $("#tab-proof").innerHTML = `
     <div class="card"><h2>${esc(m.name)}: live predictions (result se pehle lock)</h2>
       <p class="muted">Sirf wahi predictions gini jaati hain jo result time se pehle lock hui aur jinka hash match karta hai.</p>
+      ${threeDigitNote(m.live.rows)}
       ${summaryStats(m.live.summary, "Live accuracy (jodi)")}
       ${digitSummary(m.live.digits)}
     </div>
     <div class="card table-wrap"><table>
-      <thead><tr><th>Date</th><th>Lock time</th><th>Top-10</th><th class="num">Actual</th><th class="num">Rank</th><th>Jodi</th><th>Andar (top-3)</th><th>Bahar (top-3)</th><th>Hash</th></tr></thead>
+      <thead><tr><th>Date</th><th>Lock time</th><th>Top-10</th><th class="num">Actual</th><th class="num">Rank</th><th>Jodi</th><th>Andar (top-5)</th><th>Bahar (top-5)</th><th>Hash</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="9" class="muted">Abhi koi live prediction nahi.</td></tr>'}</tbody>
     </table></div>`;
 }
@@ -388,8 +409,9 @@ function renderTest() {
       <td class="mono">${r.top10.map((v) => (v === r.actual ? `<span class="hl">${jd(v)}</span>` : jd(v))).join(" ")}</td>
       <td class="num">${r.rank}</td>
       <td>${r.hit10 ? '<span class="pill good">HIT</span>' : '<span class="pill bad">MISS</span>'}
-        ${r.andar_hit ? '<span class="pill">A✔</span>' : ""}${r.bahar_hit ? '<span class="pill">B✔</span>' : ""}
-        ${whyList(r.why)}</td></tr>`).join("");
+        ${whyList(r.why)}</td>
+      <td>${r.andar ? digitCell(r.andar, Math.floor(r.actual / 10), r.andar_hit, r.andar1_hit) : (r.andar_hit ? "✔" : "✘")}</td>
+      <td>${r.bahar ? digitCell(r.bahar, r.actual % 10, r.bahar_hit, r.bahar1_hit) : (r.bahar_hit ? "✔" : "✘")}</td></tr>`).join("");
   $("#tab-test").innerHTML = `
     <div class="card"><h2>${esc(m.name)}: walk-forward test</h2>
       <p class="muted">Har din ki prediction sirf us din se pehle ke data se bani (future leak nahi) — bilkul live jaisa.</p>
@@ -400,7 +422,7 @@ function renderTest() {
       ${summaryStats(bt.all, "Poora itihaas")}
     </div>
     <div class="card table-wrap"><table>
-      <thead><tr><th>Date</th><th class="num">Actual</th><th>Tool ki Top-10</th><th class="num">Rank</th><th>Result</th></tr></thead>
+      <thead><tr><th>Date</th><th class="num">Actual</th><th>Tool ki Top-10</th><th class="num">Rank</th><th>Jodi</th><th>Andar (top-5)</th><th>Bahar (top-5)</th></tr></thead>
       <tbody>${rows}</tbody></table></div>`;
 }
 
@@ -567,9 +589,24 @@ function renderTheorems() {
 }
 
 // ------------------------------------------------------------------ chart
+// date|market -> locked prediction row (with its HIT/MISS)
+function lockedRows() {
+  const out = {};
+  Object.values(state.dash.markets).forEach((m) => ((m.live && m.live.rows) || []).forEach((r) => { out[`${r.date}|${m.key}`] = r; }));
+  return out;
+}
+
+const tick = (ok) => (ok ? '<span class="ok">✔</span>' : '<span class="no">✘</span>');
+
 function renderChart() {
   const d = state.dash;
   const keys = Object.keys(d.markets);
+  const locked = lockedRows();
+  const cell = (r, k) => {
+    const p = locked[`${r.date}|${k}`];
+    if (!p || r[k] == null || p.actual == null) return jd(r[k]);
+    return `${jd(r[k])}<br><small class="marks" title="Locked prediction: Top-10 ${p.top10.map(jd).join(" ")} · Andar ${p.andar.join(" ")} · Bahar ${p.bahar.join(" ")}">J${tick(p.status === "hit")} A${tick(p.andar_hit)} B${tick(p.bahar_hit)}</small>`;
+  };
   const months = [...new Set(d.results.map((r) => r.date.slice(0, 7)))];
   const sel = state.month && months.includes(state.month) ? state.month : "all";
   const rows = d.results.filter((r) => sel === "all" || r.date.startsWith(sel));
@@ -578,12 +615,65 @@ function renderChart() {
       <h2>Result chart (${esc(d.history_start)} se aaj tak) — ${d.results.length} din</h2>
       <select id="monthSel"><option value="all">Saare mahine</option>${months.map((mo) => `<option ${mo === sel ? "selected" : ""}>${mo}</option>`).join("")}</select>
     </div>
-    ${state.mode === "server" ? '<a href="api/results.csv">CSV download</a>' : ""}</div>
+    ${state.mode === "server" ? '<a href="api/results.csv">CSV download</a>' : ""}
+    <p class="muted small">Jis din tool ki locked prediction thi, result ke neeche: J = jodi Top-10, A = Andar top-5, B = Bahar top-5 (✔ HIT, ✘ MISS). Poori list: History tab.</p></div>
     <div class="card table-wrap"><table>
       <thead><tr><th>Date</th>${keys.map((k) => `<th class="num">${esc(d.markets[k].short)}<br><small class="muted">${esc(d.markets[k].result_time)}</small></th>`).join("")}</tr></thead>
-      <tbody>${rows.map((r) => `<tr><td>${esc(r.date)}</td>${keys.map((k) => `<td class="num">${jd(r[k])}</td>`).join("")}</tr>`).join("")
+      <tbody>${rows.map((r) => `<tr><td>${esc(r.date)}</td>${keys.map((k) => `<td class="num">${cell(r, k)}</td>`).join("")}</tr>`).join("")
         || `<tr><td colspan="${keys.length + 1}" class="muted">Abhi data nahi.</td></tr>`}</tbody></table></div>`;
   $("#monthSel").addEventListener("change", (e) => { state.month = e.target.value; renderChart(); });
+}
+
+// ---------------------------------------------------------------- history
+function historyTally(rows) {
+  const done = rows.filter((r) => r.actual != null && !r.late && r.verified);
+  const n = done.length;
+  const c = (f) => done.filter(f).length;
+  const cellOf = (k, chance) => `<td class="num"><b>${k}/${n}</b> <small class="muted">${n ? pct(k / n, 0) : "–"} · random ${pct(chance, 0)}</small></td>`;
+  return { n, html: cellOf(c((r) => r.status === "hit"), 0.1) + cellOf(c((r) => r.andar_hit), DIGIT_K / 10)
+    + cellOf(c((r) => r.bahar_hit), DIGIT_K / 10) + cellOf(c((r) => r.andar1_hit), 0.1) + cellOf(c((r) => r.bahar1_hit), 0.1) };
+}
+
+function renderHistory() {
+  const d = state.dash;
+  const ms = Object.values(d.markets).filter((m) => m.ready);
+  const sel = state.histMarket && d.markets[state.histMarket] ? state.histMarket : "all";
+  const all = [];
+  ms.forEach((m) => ((m.live && m.live.rows) || []).forEach((r) => all.push({ ...r, m })));
+  all.sort((a, b) => b.date.localeCompare(a.date) || b.m.result_time.localeCompare(a.m.result_time));
+  const rows = all.filter((r) => sel === "all" || r.m.key === sel);
+  const tallies = ms.map((m) => `<tr><td><b>${esc(m.name)}</b></td>${historyTally(all.filter((r) => r.m.key === m.key)).html}</tr>`).join("")
+    + `<tr><td><b>Chaaron</b></td>${historyTally(all).html}</tr>`;
+  const status = { hit: '<span class="pill good">HIT</span>', miss: '<span class="pill bad">MISS</span>',
+    pending: '<span class="pill warn">intezaar</span>', "no-result": '<span class="pill">result nahi aaya</span>' };
+  const body = rows.map((r) => {
+    const a = r.actual == null ? null : Math.floor(r.actual / 10), b = r.actual == null ? null : r.actual % 10;
+    return `<tr class="${r.status}">
+      <td class="nowrap">${esc(r.date)}</td><td><b>${esc(r.m.name)}</b><br><small class="muted">${esc(r.m.result_time)}</small></td>
+      <td class="small">${fmtTime(r.created_at)}${r.late ? ' <span class="pill bad">late</span>' : ""}</td>
+      <td class="mono">${r.top10.map((v) => (v === r.actual ? `<span class="hl">${jd(v)}</span>` : jd(v))).join(" ")}</td>
+      <td class="num"><b>${jd(r.actual)}</b>${r.rank ? `<br><small class="muted">rank ${r.rank}</small>` : ""}</td>
+      <td>${status[r.status] || ""}</td>
+      <td>${digitCell(r.andar, a, r.andar_hit, r.andar1_hit)}</td>
+      <td>${digitCell(r.bahar, b, r.bahar_hit, r.bahar1_hit)}</td>
+      <td class="mono small nowrap" title="${esc(r.hash)}">${r.verified ? "✔" : "✘ TAMPERED"} ${esc(r.hash.slice(0, 8))}…</td></tr>`;
+  }).join("");
+  const csv = state.mode === "server" ? "api/prediction_history.csv" : "../data/prediction_history.csv";
+  $("#tab-history").innerHTML = `
+    <div class="card"><h2>Prediction history — tool ne jo bhi diya, sab yahan</h2>
+      <p class="muted">Har prediction result se <i>pehle</i> lock hoti hai aur kabhi badalti nahi. Result aate hi yahan HIT/MISS lag jata hai. Jodi = Top-10, Andar/Bahar = top-5 digit, #1 = sirf pehla digit.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Market</th><th class="num">Jodi Top-10</th><th class="num">Andar top-5</th><th class="num">Bahar top-5</th><th class="num">Andar #1</th><th class="num">Bahar #1</th></tr></thead>
+        <tbody>${tallies}</tbody></table></div>
+      <p class="muted small">Gini sirf woh predictions jo result se pehle lock hui aur hash match hua. Random chance: jodi Top-10 10%, top-5 digit 50%, ek digit 10%.</p>
+      ${threeDigitNote(all)}
+      <div class="row"><select id="histSel"><option value="all">Saare markets</option>${ms.map((m) => `<option value="${m.key}" ${m.key === sel ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
+        <a href="${csv}" download>CSV download (poori history)</a></div>
+    </div>
+    <div class="card table-wrap"><table>
+      <thead><tr><th>Date</th><th>Market</th><th>Lock time</th><th>Top-10 (locked)</th><th class="num">Result</th><th>Jodi</th><th>Andar (top-5)</th><th>Bahar (top-5)</th><th>Hash</th></tr></thead>
+      <tbody>${body || '<tr><td colspan="9" class="muted">Abhi koi locked prediction nahi.</td></tr>'}</tbody></table></div>`;
+  $("#histSel").addEventListener("change", (e) => { state.histMarket = e.target.value; renderHistory(); });
 }
 
 // ------------------------------------------------------------------- init

@@ -29,6 +29,7 @@
     <button data-tab="learning">Learning</button>
     <button data-tab="formulas">Formule</button>
     <button data-tab="theorems">Theorems</button>
+    <button data-tab="history">History (sab predictions)</button>
     <button data-tab="chart">Result Chart</button>
     <button data-tab="help">Kaise Use Kare</button>
   </nav>
@@ -42,6 +43,7 @@
     <section id="tab-learning" class="tab"></section>
     <section id="tab-formulas" class="tab"></section>
     <section id="tab-theorems" class="tab"></section>
+    <section id="tab-history" class="tab"></section>
     <section id="tab-chart" class="tab"></section>
     <section id="tab-help" class="tab">
       <div class="card">
@@ -49,14 +51,15 @@
         <ol class="steps">
           <li><b>Kuch feed nahi karna.</b> Server chalte hi tool khud result websites se Jan 2021 se aaj tak (5 saal) ka data laata hai, aur har 15 minute me naya result check karta hai.</li>
           <li><b>Aaj ke results</b> (sabse upar): har market ka result time, countdown, aur result aate hi asli number + HIT/MISS.</li>
-          <li><b>Aaj ki Prediction</b> tab: har market ki agle result ki Top-10 jodi, Andar/Bahar top-3 aur tool ke khud ke formule. Har prediction result se <i>pehle</i> lock hoti hai, uska SHA-256 hash aur time likha hota hai.</li>
+          <li><b>Aaj ki Prediction</b> tab: har market ki agle result ki Top-10 jodi, Andar/Bahar top-5 aur tool ke khud ke formule. Har prediction result se <i>pehle</i> lock hoti hai, uska SHA-256 hash aur time likha hota hai.</li>
           <li><b>Proof (Live)</b> tab: result aane ke baad tool khud milata hai — HIT/MISS, actual number ka rank, aur "kyu galat hua / kya seekha".</li>
+          <li><b>History</b> tab: tool ne aaj tak jo bhi prediction di (chaaron markets), sab ek jagah — Top-10, Andar top-5, Bahar top-5, asli result aur HIT/MISS, market-wise score aur CSV download. <b>Result Chart</b> me bhi har us din ke result ke neeche J/A/B ✔✘ dikhta hai.</li>
           <li><b>7-Din Test</b>: pichle 7/30/100/200/saare din ka walk-forward test — har din sirf us din se pehle ka data use hua, jaise live me hota.</li>
           <li><b>Learning</b>: 28 models (Bayes, Markov, Fourier, Kaplan–Meier, chaos theory, universal prediction (CTW), neural network, genetic programming, Aryabhata kuttaka, Fibonacci/golden ratio, Vedic beejank / Tesla 3-6-9, Einstein random walk, khud ke formule...) ke weights har result ke baad badalte hain (Fixed-Share Hedge + meta-learning + linear/geometric merge + miss-correction). Har market ki prediction usi din pehle aaye markets ke result ke baad lock hoti hai (same-day connection). "Seekhne ka asar" aur "Khud ko todo" test bhi yahin hain.</li>
           <li><b>Formule</b> aur <b>Theorems</b>: tool ke khud dhoondhe formule aur statistical findings, unseen data par test karke.</li>
         </ol>
         <h3>Accuracy kaise padhein</h3>
-        <p>Har number ke liye random chance: exact = 1%, top-10 = 10%, Andar/Bahar top-3 = 30%. Tool apni accuracy hamesha isi se compare karta hai. <b>p-value</b> chhota (&lt; 0.05) ho tabhi maana jaye ki tool chance se behtar hai; warna result sirf kismat hai.</p>
+        <p>Har number ke liye random chance: exact = 1%, top-10 = 10%, Andar/Bahar top-5 = 50%, ek digit = 10%. Tool apni accuracy hamesha isi se compare karta hai. <b>p-value</b> chhota (&lt; 0.05) ho tabhi maana jaye ki tool chance se behtar hai; warna result sirf kismat hai.</p>
         <h3>Commands</h3>
 <pre>pip install -r requirements.txt
 python -m satta serve                 # dashboard: http://localhost:8000

@@ -60,8 +60,8 @@ def cmd_predict(a):
             continue
         print(f"\n== {m['name']} ({m['short']}) — {p['date']}  result ~{m['result_time']} IST ==")
         print("  Top-10 jodi :", "  ".join(f"{v:02d}({_pct(pr)})" for v, pr in p["top10"]))
-        print("  Andar top-3 :", ", ".join(f"{d}({_pct(pr)})" for d, pr in p["andar"]))
-        print("  Bahar top-3 :", ", ".join(f"{d}({_pct(pr)})" for d, pr in p["bahar"]))
+        print("  Andar top-5 :", ", ".join(f"{d}({_pct(pr)})" for d, pr in p["andar"]))
+        print("  Bahar top-5 :", ", ".join(f"{d}({_pct(pr)})" for d, pr in p["bahar"]))
         for f in p.get("formulas", []):
             print("  Formula     :", f)
         print(f"  Locked at   : {p['created_at']}{'  (LATE: result ke baad bani)' if p['late'] else ''}")
@@ -86,7 +86,7 @@ def _print_summary(s):
         print("No data")
         return
     for k, name in (("hit1", "Exact (top-1)"), ("hit5", "Top-5"), ("hit10", "Top-10"),
-                    ("andar_hit", "Andar top-3"), ("bahar_hit", "Bahar top-3")):
+                    ("andar_hit", "Andar top-5"), ("bahar_hit", "Bahar top-5")):
         v = s[k]
         print(f"{name:14} {v['hits']:>4}/{s['n']}  = {_pct(v['rate']):>6}   random: {_pct(v['chance']):>6}   "
               f"p-value {v['p_value']:.3f}")

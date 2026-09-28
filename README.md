@@ -8,7 +8,7 @@ khud sudharta hai. Aapko kuch feed nahi karna.
 
 > **Seedhi baat:** agar numbers sach me random hain to koi bhi formula unhe
 > pakka predict nahi kar sakta. Isliye tool har din apni asli accuracy random
-> chance se compare karta hai (exact = 1%, top-10 = 10%, Andar/Bahar top-3 = 30%)
+> chance se compare karta hai (exact = 1%, top-10 = 10%, Andar/Bahar top-5 = 50%)
 > aur p-value dikhata hai. Agar data me koi asli pattern hoga to tool use khud
 > pakad lega (tests me yeh prove kiya gaya hai). Agar nahi hoga to tool khud
 > bata dega ki woh random se behtar nahi hai.
@@ -70,13 +70,14 @@ update). Private repo par Pages ke liye GitHub ka paid plan chahiye; warna
 
 | Tab | Kya dikhta hai |
 |---|---|
-| **Aaj ki Prediction** | Har market ki agli Top-10 jodi (probability ke saath), Andar/Bahar top-3, tool ke formule, countdown, lock time, SHA-256 hash |
+| **Aaj ki Prediction** | Har market ki agli Top-10 jodi (probability ke saath), Andar/Bahar top-5, tool ke formule, countdown, lock time, SHA-256 hash |
 | **Proof (Live)** | Result se pehle locked predictions vs asli result: HIT/MISS, rank, "kyu galat hua / kya seekha", hash verified |
 | **7-Din Test** | Walk-forward backtest: pichle 7 / 30 / saare din, har din ka reason |
 | **Learning** | 20 models ke weights ka graph — kaunsa model kab sahi nikla aur uska bharosa kaise badla |
 | **Formule** | Tool ke dhoondhe formule, train vs unseen test, p-value |
 | **Theorems** | Data par statistical tests: uniformity, independence, serial correlation, runs, cross-market, entropy, Hedge theorem |
-| **Result Chart** | Jan 2026 se aaj tak har din ka har market ka result, CSV download |
+| **History (sab predictions)** | Chaaron markets ki har locked prediction: Top-10, Andar top-5, Bahar top-5, asli result, HIT/MISS, market-wise score; `data/prediction_history.csv` me bhi har cycle par likhi jaati hai |
+| **Result Chart** | 2021 se aaj tak har din ka har market ka result; jis din prediction thi wahan J/A/B ✔✘, CSV download |
 
 ## 4. Math — engine kaise sochta hai
 

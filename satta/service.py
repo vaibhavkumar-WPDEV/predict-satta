@@ -16,8 +16,10 @@ every 15 minutes, GitHub Actions every hour):
 
 from __future__ import annotations
 
+import csv
 import datetime as dt
 import hashlib
+import io
 import json
 import logging
 import math
@@ -29,8 +31,9 @@ import numpy as np
 from . import config, scraper, storage
 from .engine import formulas, theorems
 from .engine.base import SeriesData, andar_bahar
-from .engine.ensemble import (SELECT_ETA, SHIFTS, Replay, candidate_label, digit_top, postmortem,
-                              predict_next, rank_of, replay, score, selected, summarize, top_list)
+from .engine.ensemble import (DIGIT_K, SELECT_ETA, SHIFTS, Replay, candidate_label, digit_top,
+                              postmortem, predict_next, rank_of, replay, score, selected, summarize,
+                              top_list)
 
 log = logging.getLogger("satta.service")
 _lock = threading.Lock()
@@ -173,11 +176,15 @@ def _backtest(rep: Replay, rows: int = 200) -> dict:
     scores = [score(s.mix, s.actual) for s in rep.steps]
     table = []
     for s, sc in list(zip(rep.steps, scores))[-rows:][::-1]:
+        at, ab = andar_bahar(s.mix)
+        andar, bahar = [d for d, _ in digit_top(at)], [d for d, _ in digit_top(ab)]
         table.append({
             "date": s.date.isoformat(), "actual": s.actual,
             "top10": [v for v, _ in top_list(s.mix)],
+            "andar": andar, "bahar": bahar,
             "rank": sc["rank"], "hit10": sc["hit10"], "hit1": sc["hit1"],
             "andar_hit": sc["andar_hit"], "bahar_hit": sc["bahar_hit"],
+            "andar1_hit": s.actual // 10 == andar[0], "bahar1_hit": s.actual % 10 == bahar[0],
             "why": postmortem(s, rep.experts, sc)["lines"],
         })
     return {
@@ -412,6 +419,17 @@ def _random_or_systematic(hit: bool, decision: dict | None, rep: Replay) -> str:
             f"Pichle {n} din: {k} hit, umeed ~{n * rate:.0f}.")
 
 
+def _digits(locked: list, probs: np.ndarray) -> list[int]:
+    """The locked digit picks, filled up to DIGIT_K from the locked (hashed) distribution.
+
+    Predictions locked before the top-5 change stored 3 digits; their 4th and
+    5th digit are the next most likely ones in the same locked distribution.
+    """
+    out = [int(d) for d, _ in locked][:DIGIT_K]
+    rest = [int(d) for d in np.argsort(-probs, kind="stable") if int(d) not in out]
+    return out + rest[:DIGIT_K - len(out)]
+
+
 def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.datetime,
           decision: dict | None = None) -> dict:
     steps = {s.date.isoformat(): s for s in rep.steps}
@@ -419,17 +437,18 @@ def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.date
     for p in sorted((p for p in preds if p["market"] == market), key=lambda p: p["date"], reverse=True):
         d = dt.date.fromisoformat(p["date"])
         actual = table[market].get(d)
+        at, ab = andar_bahar(np.array(p["dist"]))
         row = {"date": p["date"], "created_at": p["created_at"], "late": p.get("late", False),
-               "hash": p["hash"], "verified": storage.verify_prediction(p),
-               "top10": [v for v, _ in p["top10"]], "andar": [d_ for d_, _ in p["andar"]],
-               "bahar": [d_ for d_, _ in p["bahar"]], "actual": actual}
+               "engine": p.get("engine"), "hash": p["hash"], "verified": storage.verify_prediction(p),
+               "top10": [v for v, _ in p["top10"]], "andar": _digits(p["andar"], at),
+               "bahar": _digits(p["bahar"], ab), "locked_digits": len(p["andar"]), "actual": actual}
         if actual is None:
             overdue = now.astimezone(config.IST) > config.result_datetime(market, d) + dt.timedelta(days=2)
             row["status"] = "no-result" if overdue else "pending"
         else:
             sc = score(np.array(p["dist"]), actual)
             a, b = actual // 10, actual % 10
-            # andar/bahar are judged on the digits that were locked, like the jodi list
+            # andar/bahar are judged on the locked digits, like the jodi list
             sc["andar_hit"], sc["bahar_hit"] = a in row["andar"], b in row["bahar"]
             row.update(status="hit" if sc["hit10"] else "miss", rank=sc["rank"], hit1=sc["hit1"],
                        andar_hit=sc["andar_hit"], bahar_hit=sc["bahar_hit"],
@@ -445,7 +464,8 @@ def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.date
                 counted.append(row)
         rows.append(row)
     digits = {}
-    for key, chance in (("andar_hit", 0.3), ("bahar_hit", 0.3), ("andar1_hit", 0.1), ("bahar1_hit", 0.1)):
+    for key, chance in (("andar_hit", DIGIT_K / 10), ("bahar_hit", DIGIT_K / 10),
+                        ("andar1_hit", 0.1), ("bahar1_hit", 0.1)):
         k = sum(1 for r in counted if r[key])
         digits[key] = {"hits": k, "n": len(counted), "chance": chance}
     return {"summary": _clean(summarize(scores)), "digits": digits, "rows": rows}
@@ -463,6 +483,26 @@ def _clean(obj):
     if isinstance(obj, (float, np.floating)):
         return _r(obj, 6)
     return obj
+
+
+def prediction_history(markets: dict) -> str:
+    """Every locked prediction with its result, as CSV (data/prediction_history.csv)."""
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["date", "market", "locked_at", "engine", "top10", f"andar_top{DIGIT_K}",
+                f"bahar_top{DIGIT_K}", "result", "jodi", "rank", "andar", "bahar", "andar_#1", "bahar_#1",
+                "late", "hash_ok", "hash"])
+    mark = {True: "HIT", False: "MISS", None: ""}
+    rows = [(m, r) for m, pl in markets.items() for r in (pl.get("live") or {}).get("rows", [])]
+    for m, r in sorted(rows, key=lambda x: (x[1]["date"], config.MARKETS[x[0]]["result_time"]), reverse=True):
+        done = r.get("actual") is not None
+        w.writerow([r["date"], config.MARKETS[m]["name"], r["created_at"], r.get("engine") or "",
+                    " ".join(f"{v:02d}" for v in r["top10"]), " ".join(map(str, r["andar"])),
+                    " ".join(map(str, r["bahar"])), f"{r['actual']:02d}" if done else "",
+                    r["status"].upper(), r.get("rank", ""),
+                    *(mark[r.get(k) if done else None] for k in ("andar_hit", "bahar_hit", "andar1_hit", "bahar1_hit")),
+                    "yes" if r.get("late") else "", "yes" if r["verified"] else "NO", r["hash"]])
+    return out.getvalue()
 
 
 def results_table(table: dict) -> list[dict]:
@@ -644,6 +684,7 @@ def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = T
         }
         (config.DATA_DIR / "dashboard.json").write_text(
             json.dumps(_clean(dash), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        (config.DATA_DIR / "prediction_history.csv").write_text(prediction_history(markets), encoding="utf-8")
         return {"generated_at": dash["generated_at"], "new_predictions": created,
                 "results": sum(len(v) for v in table.values()),
                 "sync": {k: v for k, v in (sync_info or {}).items() if k != "conflicts"}}

@@ -45,8 +45,22 @@ def test_cycle_locks_prediction_and_scores_it_later(data_dir):
     done = [r for r in live["rows"] if r["date"] == "2026-03-02"][0]
     assert done["status"] == "hit" and done["rank"] == 1 and done["verified"]
     assert live["summary"]["n"] == 1 and live["summary"]["hit1"]["hits"] == 1
+    # andar/bahar are top-5 digits, scored like the jodi list
+    assert len(done["andar"]) == len(done["bahar"]) == 5
+    assert done["andar_hit"] and done["bahar_hit"] and live["digits"]["andar_hit"]["chance"] == 0.5
+    # every locked prediction is kept in the history CSV with its result
+    hist = (data_dir / "prediction_history.csv").read_text().splitlines()
+    assert hist[0].startswith("date,market,locked_at")
+    assert any(line.startswith(f"2026-03-02,Faridabad,") and f",{actual:02d},HIT,1," in line for line in hist)
     # 3 March is next; it waits for 3 March's Disawar result
     assert dash["markets"]["faridabad"]["waiting"]["date"] == "2026-03-03"
+
+
+def test_old_three_digit_locks_are_filled_from_the_locked_distribution():
+    import numpy as np
+    probs = np.array([0.05, 0.3, 0.02, 0.2, 0.1, 0.08, 0.06, 0.04, 0.1, 0.05])
+    # locked order is kept, the rest follow by probability
+    assert service._digits([[3, 0.2], [1, 0.3], [4, 0.1]], probs) == [3, 1, 4, 8, 5]
 
 
 def test_unchanged_data_takes_the_fast_path(data_dir):

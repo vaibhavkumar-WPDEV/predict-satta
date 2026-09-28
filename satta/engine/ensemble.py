@@ -213,7 +213,11 @@ def top_list(p: np.ndarray, k: int = 10) -> list[list]:
     return [[int(v), round(float(p[v]), 5)] for v in order]
 
 
-def digit_top(p10: np.ndarray, k: int = 3) -> list[list]:
+# Andar/Bahar picks per market: top-5 digits (random chance 50%).
+DIGIT_K = 5
+
+
+def digit_top(p10: np.ndarray, k: int = DIGIT_K) -> list[list]:
     order = np.argsort(-p10, kind="stable")[:k]
     return [[int(d), round(float(p10[d]), 4)] for d in order]
 
@@ -247,9 +251,9 @@ def postmortem(step: Step, experts: list[Expert], official: dict | None = None,
     else:
         lines.append(f"✘ MISS: {a:02d} ko rank {sc['rank']}/100 mila (probability {sc['prob']:.2%}, "
                      f"random = 1.00%).")
-    lines.append(("✔" if sc["andar_hit"] else "✘") + f" Andar {a // 10} top-3 me "
+    lines.append(("✔" if sc["andar_hit"] else "✘") + f" Andar {a // 10} top-{DIGIT_K} me "
                  + ("tha." if sc["andar_hit"] else "nahi tha."))
-    lines.append(("✔" if sc["bahar_hit"] else "✘") + f" Bahar {a % 10} top-3 me "
+    lines.append(("✔" if sc["bahar_hit"] else "✘") + f" Bahar {a % 10} top-{DIGIT_K} me "
                  + ("tha." if sc["bahar_hit"] else "nahi tha."))
     top10 = top10 if top10 is not None else [v for v, _ in top_list(step.mix)]
     near = [v for v in top10 if v in (int((a % 10) * 10 + a // 10), (a + 1) % 100, (a - 1) % 100)]
@@ -285,7 +289,8 @@ def summarize(scores: list[dict]) -> dict:
     out = {"n": n}
     if n == 0:
         return out
-    for key, p0 in (("hit1", 0.01), ("hit5", 0.05), ("hit10", 0.10), ("andar_hit", 0.30), ("bahar_hit", 0.30)):
+    for key, p0 in (("hit1", 0.01), ("hit5", 0.05), ("hit10", 0.10),
+                    ("andar_hit", DIGIT_K / 10), ("bahar_hit", DIGIT_K / 10)):
         hits = sum(1 for s in scores if s[key])
         out[key] = {"hits": hits, "rate": hits / n, "chance": p0, "expected": p0 * n,
                     "p_value": binom_sf(hits, n, p0)}
