@@ -415,7 +415,7 @@ def _random_or_systematic(hit: bool, decision: dict | None, rep: Replay) -> str:
 def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.datetime,
           decision: dict | None = None) -> dict:
     steps = {s.date.isoformat(): s for s in rep.steps}
-    rows, scores = [], []
+    rows, scores, counted = [], [], []
     for p in sorted((p for p in preds if p["market"] == market), key=lambda p: p["date"], reverse=True):
         d = dt.date.fromisoformat(p["date"])
         actual = table[market].get(d)
@@ -428,8 +428,13 @@ def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.date
             row["status"] = "no-result" if overdue else "pending"
         else:
             sc = score(np.array(p["dist"]), actual)
+            a, b = actual // 10, actual % 10
+            # andar/bahar are judged on the digits that were locked, like the jodi list
+            sc["andar_hit"], sc["bahar_hit"] = a in row["andar"], b in row["bahar"]
             row.update(status="hit" if sc["hit10"] else "miss", rank=sc["rank"], hit1=sc["hit1"],
-                       andar_hit=sc["andar_hit"], bahar_hit=sc["bahar_hit"])
+                       andar_hit=sc["andar_hit"], bahar_hit=sc["bahar_hit"],
+                       andar1_hit=bool(row["andar"]) and a == row["andar"][0],
+                       bahar1_hit=bool(row["bahar"]) and b == row["bahar"][0])
             step = steps.get(p["date"])
             if step is not None:
                 source = p.get("model") or f"engine {p.get('engine', '?')} (Top-10 selector se pehle)"
@@ -437,8 +442,13 @@ def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.date
                 row["why"].append(_random_or_systematic(bool(sc["hit10"]), decision, rep))
             if not p.get("late") and row["verified"]:
                 scores.append(sc)
+                counted.append(row)
         rows.append(row)
-    return {"summary": _clean(summarize(scores)), "rows": rows}
+    digits = {}
+    for key, chance in (("andar_hit", 0.3), ("bahar_hit", 0.3), ("andar1_hit", 0.1), ("bahar1_hit", 0.1)):
+        k = sum(1 for r in counted if r[key])
+        digits[key] = {"hits": k, "n": len(counted), "chance": chance}
+    return {"summary": _clean(summarize(scores)), "digits": digits, "rows": rows}
 
 
 def _clean(obj):

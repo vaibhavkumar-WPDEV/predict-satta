@@ -111,8 +111,8 @@ function predictionCard(m, hero) {
     ${(m.closed_days || []).length ? `<div class="muted" style="font-size:12px">Data se seekha: ${m.closed_days.map((k) => ({ month_end: "mahine ke aakhri din", month_start: "mahine ki 1 tareekh" }[k] || k)).join(", ")} result nahi aata — us din ki prediction nahi banti.</div>` : ""}
     <div class="jodis">${jodis}</div>
     <div class="digits">
-      <span>Andar: ${p.andar.map(([d, pr]) => `<b>${d}</b><small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>
-      <span>Bahar: ${p.bahar.map(([d, pr]) => `<b>${d}</b><small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>
+      <span>Andar (pehla digit): ${p.andar.map(([d, pr], i) => `<b>${d}</b>${i === 0 ? "<sup>#1</sup>" : ""}<small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>
+      <span>Bahar (doosra digit): ${p.bahar.map(([d, pr], i) => `<b>${d}</b>${i === 0 ? "<sup>#1</sup>" : ""}<small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>
     </div>
     ${p.model ? `<div class="muted small">Is list ka model (Top-10 selector ne chuna): <b>${esc(p.model)}</b></div>` : ""}
     ${formulas ? `<h3>Tool ke formule (is din ke liye)</h3>${formulas}` : ""}
@@ -230,11 +230,13 @@ function statusStrip(d) {
     const actual = row && row.actual != null ? row.actual : res ? res[m.key] : null;
     let body;
     if (actual != null) {
-      body = `<div class="big">${jd(actual)}</div><div>Result aa gaya ${row ? resultPill(row) : ""}</div>
-        ${row ? `<div class="muted small">Locked top-10: ${row.top10.map(jd).join(" ")}</div>` : ""}`;
+      body = `<div class="big">${jd(actual)}</div><div>Jodi ${row ? resultPill(row) : ""}</div>
+        ${row ? `<div class="small">Andar ${row.andar_hit ? "✔" : "✘"} (${row.andar.join("·")}) · Bahar ${row.bahar_hit ? "✔" : "✘"} (${row.bahar.join("·")})</div>
+        <div class="muted small">Locked top-10: ${row.top10.map(jd).join(" ")}</div>` : ""}`;
     } else if (m.next && m.next.date === today) {
       body = `<div class="big">⏳</div><div>~${esc(m.result_time)} IST</div>
-        <div class="small" data-until="${esc(m.next.result_time)}"></div>`;
+        <div class="small" data-until="${esc(m.next.result_time)}"></div>
+        <div class="small">Andar: <b>${m.next.andar.map(([d]) => d).join(" · ")}</b> · Bahar: <b>${m.next.bahar.map(([d]) => d).join(" · ")}</b></div>`;
     } else if (m.waiting && m.waiting.date === today) {
       body = `<div class="big">⏳</div><div>~${esc(m.result_time)} IST</div>
         <div class="muted small">Prediction ${m.waiting.for.length ? esc(m.waiting.for.join(", ")) + " ke aaj ke result ke baad" : "jaldi"} lock hogi</div>`;
@@ -281,7 +283,8 @@ function coverageCard(m) {
   const digitRows = (arr, tested, name) => tested.map((r) => {
     const top = ranked(name === "Andar" ? p.andar : p.bahar, arr, r.k);
     return `<tr><td>${name} top-${r.k}</td><td class="mono">${top.map(([d]) => d).join(", ")}</td>
-      <td class="num"><b>${pct(r.tested)}</b></td><td class="num">${pct(r.random, 0)}</td></tr>`;
+      <td class="num"><b>${pct(r.tested)}</b></td><td class="num">${pct(r.random, 0)}</td>
+      <td class="num">₹${(r.tested * 9 * 100 / r.k).toFixed(0)}</td></tr>`;
   }).join("");
   return `
   <div class="card">
@@ -295,7 +298,7 @@ function coverageCard(m) {
       <tbody>${rows}</tbody></table></div>
     <h3>Andar / Bahar</h3>
     <div class="table-wrap"><table>
-      <thead><tr><th></th><th>Digits</th><th class="num">Asli test</th><th class="num">Random</th></tr></thead>
+      <thead><tr><th></th><th>Digits</th><th class="num">Asli test</th><th class="num">Random</th><th class="num">₹100 par ausatan wapas<br><small class="muted">(9 guna rate)</small></th></tr></thead>
       <tbody>${digitRows(at, c.andar, "Andar")}${digitRows(ab, c.bahar, "Bahar")}</tbody></table></div>
     <p class="muted" style="font-size:12px">Hisaab: N numbers par ₹100 barabar baantne se har number par ₹100/N lagta hai; asli number list me aaya to ₹100/N × rate milta hai. Ausatan wapas = asli test % × rate × 100 / N. Random picking me yeh hamesha ₹${rate} hota hai, chahe N kitna bhi ho.</p>
   </div>`;
@@ -328,6 +331,23 @@ function whyList(lines) {
   return `<details><summary>kyu? / kya seekha</summary><ul class="why">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></details>`;
 }
 
+// Andar/Bahar cell: the three locked digits, the real digit marked, ✔/✘, and "#1" when the first pick hit.
+function digitCell(digits, actualDigit, hit, first) {
+  if (!digits || !digits.length) return "–";
+  const ds = digits.map((d, i) => (actualDigit != null && d === actualDigit ? `<span class="hl">${d}</span>` : `${d}`)
+    + (i === 0 ? "<sup>#1</sup>" : "")).join(" · ");
+  if (actualDigit == null) return `<span class="mono">${ds}</span>`;
+  return `<span class="mono">${ds}</span> ${hit ? '<span class="pill good">✔</span>' : '<span class="pill bad">✘</span>'}${first ? ' <span class="pill good">#1 HIT</span>' : ""}`;
+}
+
+function digitSummary(dg) {
+  if (!dg || !dg.andar_hit || !dg.andar_hit.n) return "";
+  const card = (k, name) => `<div class="stat"><div class="s">${name}</div>
+    <div class="v">${pct(dg[k].hits / dg[k].n)}</div><div class="s">${dg[k].hits}/${dg[k].n} · random ${pct(dg[k].chance, 0)}</div></div>`;
+  return `<h3>Andar / Bahar live</h3><div class="grid stats">
+    ${card("andar_hit", "Andar top-3")}${card("bahar_hit", "Bahar top-3")}${card("andar1_hit", "Andar #1 (ek digit)")}${card("bahar1_hit", "Bahar #1 (ek digit)")}</div>`;
+}
+
 function renderProof() {
   const m = cur();
   if (!m.ready) { $("#tab-proof").innerHTML = `<div class="card">${esc(m.reason)}</div>`; return; }
@@ -341,17 +361,20 @@ function renderProof() {
       <td class="num"><b>${jd(r.actual)}</b></td>
       <td class="num">${r.rank ?? "–"}</td>
       <td>${status} ${whyList(r.why)}</td>
+      <td>${digitCell(r.andar, r.actual == null ? null : Math.floor(r.actual / 10), r.andar_hit, r.andar1_hit)}</td>
+      <td>${digitCell(r.bahar, r.actual == null ? null : r.actual % 10, r.bahar_hit, r.bahar1_hit)}</td>
       <td class="mono" title="${esc(r.hash)}">${r.verified ? "✔" : "✘ TAMPERED"} ${esc(r.hash.slice(0, 10))}…</td>
     </tr>`;
   }).join("");
   $("#tab-proof").innerHTML = `
     <div class="card"><h2>${esc(m.name)}: live predictions (result se pehle lock)</h2>
       <p class="muted">Sirf wahi predictions gini jaati hain jo result time se pehle lock hui aur jinka hash match karta hai.</p>
-      ${summaryStats(m.live.summary, "Live accuracy")}
+      ${summaryStats(m.live.summary, "Live accuracy (jodi)")}
+      ${digitSummary(m.live.digits)}
     </div>
     <div class="card table-wrap"><table>
-      <thead><tr><th>Date</th><th>Lock time</th><th>Top-10</th><th class="num">Actual</th><th class="num">Rank</th><th>Status</th><th>Hash</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="7" class="muted">Abhi koi live prediction nahi.</td></tr>'}</tbody>
+      <thead><tr><th>Date</th><th>Lock time</th><th>Top-10</th><th class="num">Actual</th><th class="num">Rank</th><th>Jodi</th><th>Andar (top-3)</th><th>Bahar (top-3)</th><th>Hash</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="9" class="muted">Abhi koi live prediction nahi.</td></tr>'}</tbody>
     </table></div>`;
 }
 

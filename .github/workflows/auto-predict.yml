@@ -2,9 +2,9 @@ name: Auto predict
 
 # A watcher: each run keeps fetching new results every 10 minutes for about
 # 5.5 hours, scores the locked predictions, re-learns the model weights and
-# locks the next predictions. GitHub may delay or drop scheduled runs, so the
-# frequent schedule only has to start a run now and then; a new run waits in
-# the queue until the current one ends. Each commit is a public, timestamped
+# locks the next predictions, then starts the next watcher itself (GitHub
+# dropped scheduled runs for up to 8 hours). The schedule is only a backup;
+# scheduled starts wait in the queue while a watcher runs. Each commit is a public, timestamped
 # proof that a prediction existed before its result.
 on:
   schedule:
@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # lets a finishing watcher start the next one
 
 concurrency:
   group: auto-predict
@@ -72,3 +73,9 @@ jobs:
             [ "$(date +%s)" -ge "$end" ] && break
             sleep 600
           done
+
+      - name: Start the next watcher (GitHub often drops scheduled runs)
+        if: ${{ !cancelled() }}   # a push cancels a watcher and starts its own
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run auto-predict.yml --ref "${{ github.ref_name }}" || echo "could not chain; the schedule will start one"
