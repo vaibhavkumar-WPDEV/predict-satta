@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 
 from . import config, scraper, storage
-from .engine import formulas, theorems
+from .engine import formulas, recency, theorems
 from .engine.base import SeriesData, andar_bahar
 from .engine.ensemble import (DIGIT_K, SELECT_ETA, SHIFTS, Replay, candidate_label, digit_top,
                               postmortem, predict_next, rank_of, replay, score, selected, summarize,
@@ -90,9 +90,47 @@ def next_target_date(market: str, sd: SeriesData, now: dt.datetime) -> dt.date:
     return cand
 
 
+def official_steps(rep: Replay, rec: recency.Recency) -> None:
+    """Engine 4.0: every day's list comes from the self-tuning recency engine.
+
+    The 30-model ensemble still runs (its weights, support/contra and theorems are
+    shown), but the Top-10 it would have used is replaced walk-forward by the
+    recency list of that day, so backtest, coverage and decision measure what is
+    actually locked.
+    """
+    for s in rep.steps:
+        s.mix, s.setting = rec.dist(rec.pos[(rep.market, s.date)])
+        s.chosen = -1
+
+
+def lessons(rec: recency.Recency, market: str, date: dt.date, actual: int) -> list[str]:
+    """What the recency engine learned from this result (Hinglish)."""
+    i = rec.pos.get((market, date))
+    if i is None:
+        return []
+    used, after = rec.choice(i), rec.choice(i + 1)
+    caught = [c for c in range(len(recency.CANDS)) if rec.H[i, c]]
+    past = rec.vals[max(0, i - recency.WINDOW):i][::-1]
+    seen = np.flatnonzero(past == actual)
+    lines = [f"{actual:02d} pichle {len(past)} results (chaaron markets, ~15 din) me "
+             + (f"{len(seen)} baar aaya tha, aakhri baar {int(seen[0]) + 1} result pehle."
+                if len(seen) else "ek baar bhi nahi aaya tha — recency ise pakad hi nahi sakti thi (random).")]
+    if caught:
+        lines.append(f"{len(caught)}/{len(recency.CANDS)} settings ki Top-10 me {actual:02d} tha: "
+                     + ", ".join(recency.label(c) for c in caught[:4]) + ("…" if len(caught) > 4 else "") + ".")
+    else:
+        lines.append(f"Kisi bhi setting ki Top-10 me {actual:02d} nahi tha.")
+    lines.append(f"Galti se seekha: har setting ka HIT/MISS record update hua; agli list ki setting "
+                 f"{recency.label(after)}" + (f" (pehle {recency.label(used)} thi — badli)." if after != used
+                                              else " (wahi rahi, pichle saal me sabse zyada HIT isi ke)."))
+    return lines
+
+
 def make_prediction(sd: SeriesData, rep: Replay, date: dt.date, now: dt.datetime,
-                    formula_report: dict | None = None) -> dict:
-    mix, P = predict_next(sd, rep, date)
+                    formula_report: dict | None = None, rec: recency.Recency | None = None) -> dict:
+    ens, P = predict_next(sd, rep, date)
+    rec = rec or recency.Recency(sd.table)
+    mix, setting = rec.dist(rec.index_of(sd.market, date))
     at, ab = andar_bahar(mix)
     final = {v for v, _ in top_list(mix)}
     overlap = [len(final & {v for v, _ in top_list(P[i])}) for i in range(len(rep.experts))]
@@ -115,7 +153,7 @@ def make_prediction(sd: SeriesData, rep: Replay, date: dt.date, now: dt.datetime
         "bahar": digit_top(ab),
         "dist": [round(float(x), 5) for x in mix],
         "experts": [[rep.experts[i].label, round(float(rep.weights[i]), 4)] for i in order],
-        "model": candidate_label(rep, selected(rep)),
+        "model": recency.label(setting),
         "support": support,
         "contra": contra,
     }
@@ -172,7 +210,11 @@ def _experts_table(rep: Replay) -> list[dict]:
     return out
 
 
-def _backtest(rep: Replay, rows: int = 200) -> dict:
+def _source(step) -> str | None:
+    return recency.label(step.setting) + " — khud chuni setting" if step.setting >= 0 else None
+
+
+def _backtest(rep: Replay, rows: int = 200, rec: recency.Recency | None = None) -> dict:
     scores = [score(s.mix, s.actual) for s in rep.steps]
     table = []
     for s, sc in list(zip(rep.steps, scores))[-rows:][::-1]:
@@ -185,7 +227,8 @@ def _backtest(rep: Replay, rows: int = 200) -> dict:
             "rank": sc["rank"], "hit10": sc["hit10"], "hit1": sc["hit1"],
             "andar_hit": sc["andar_hit"], "bahar_hit": sc["bahar_hit"],
             "andar1_hit": s.actual // 10 == andar[0], "bahar1_hit": s.actual % 10 == bahar[0],
-            "why": postmortem(s, rep.experts, sc)["lines"],
+            "why": postmortem(s, rep.experts, sc, list_source=_source(s), ensemble_lines=s.setting < 0)["lines"]
+            + (lessons(rec, rep.market, s.date, s.actual) if rec is not None else []),
         })
     return {
         "all": _clean(summarize(scores)),
@@ -319,7 +362,7 @@ def _arrival(market: str, rows: list[dict]) -> dict:
     return out
 
 
-def _progress(rep: Replay, window: int = 50) -> dict | None:
+def _progress(rep: Replay, window: int = 50, rec: recency.Recency | None = None) -> dict | None:
     """Did learning help? Learned weights vs the same experts with equal weights (no learning)."""
     steps = rep.steps
     if len(steps) < 10:
@@ -344,6 +387,12 @@ def _progress(rep: Replay, window: int = 50) -> dict | None:
         selector = {"chosen": candidate_label(rep, selected(rep)),
                     "ranking": [{"label": candidate_label(rep, int(j)), "hit10_rate": _r(float(rates[j]))}
                                 for j in top]}
+    if rec is not None and steps:
+        nxt = rec.index_of(rep.market, steps[-1].date) + 1
+        ranking = rec.ranking(nxt)
+        selector = {"chosen": recency.label(rec.choice(nxt)),
+                    "judged_on": int(min(nxt, recency.TRAIL)),
+                    "ranking": [{"label": recency.label(c), "hit10_rate": _r(r)} for c, r in ranking[:6]]}
     tuning = []
     if rep.meta is not None:
         tuning = sorted(({"eta": e, "alpha": a, "weight": _r(float(v))}
@@ -382,6 +431,7 @@ def self_break(table: dict, market: str, shuffles: int = 3, last: int = 150) -> 
 
     def run(s):
         rep = replay(s, start=start)
+        official_steps(rep, recency.Recency(s.table))
         return summarize([score(x.mix, x.actual) for x in rep.steps])
 
     real = run(sd)
@@ -431,7 +481,7 @@ def _digits(locked: list, probs: np.ndarray) -> list[int]:
 
 
 def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.datetime,
-          decision: dict | None = None) -> dict:
+          decision: dict | None = None, rec: recency.Recency | None = None) -> dict:
     steps = {s.date.isoformat(): s for s in rep.steps}
     rows, scores, counted = [], [], []
     for p in sorted((p for p in preds if p["market"] == market), key=lambda p: p["date"], reverse=True):
@@ -457,7 +507,10 @@ def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.date
             step = steps.get(p["date"])
             if step is not None:
                 source = p.get("model") or f"engine {p.get('engine', '?')} (Top-10 selector se pehle)"
-                row["why"] = postmortem(step, rep.experts, sc, row["top10"], source)["lines"]
+                row["why"] = postmortem(step, rep.experts, sc, row["top10"], source,
+                                        ensemble_lines=step.setting < 0)["lines"]
+                if rec is not None:
+                    row["why"] += lessons(rec, market, d, actual)
                 row["why"].append(_random_or_systematic(bool(sc["hit10"]), decision, rep))
             if not p.get("late") and row["verified"]:
                 scores.append(sc)
@@ -518,7 +571,8 @@ def table_hash(table: dict) -> str:
     return hashlib.sha256(json.dumps(items).encode()).hexdigest()[:16]
 
 
-def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=None, closed=None):
+def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=None, closed=None,
+                    rec: recency.Recency | None = None):
     sd = SeriesData(table, market)
     meta = config.MARKETS[market]
     base = {"key": market, "name": meta["name"], "short": meta["short"],
@@ -529,13 +583,15 @@ def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=No
         return {**base, "ready": False,
                 "reason": f"Is market ke sirf {sd.n} result hain, kam se kam {MIN_DATA} chahiye."}, None
     rep = replay(sd, start=min(config.MIN_TRAIN, sd.n))
+    rec = rec or recency.Recency(table)
+    official_steps(rep, rec)
     target = next_target_date(market, sd, now)
     fr = formulas.report(sd, sd.features_for(target, sd.n))
     new = None
     locked = next((p for p in preds if p["market"] == market and p["date"] == target.isoformat()), None)
     ready, waiting, deadline = lock_status(table, sd, target, now, closed or closed_map(table))
     if locked is None and lock_new and ready:
-        new = make_prediction(sd, rep, target, now, fr)
+        new = make_prediction(sd, rep, target, now, fr, rec)
         locked = new
     wait_info = None
     if locked is None:
@@ -547,13 +603,13 @@ def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=No
         "closed_days": closed_days(sd),
         "next": locked,
         "waiting": wait_info,
-        "backtest": _backtest(rep),
+        "backtest": _backtest(rep, rec=rec),
         "coverage": _coverage(rep),
         "decision": _decision(rep),
         "arrival": _arrival(market, storage.load_result_rows()),
         "live": None,  # filled by caller once new predictions are appended
         "weights": _weights_history(rep),
-        "progress": _progress(rep),
+        "progress": _progress(rep, rec=rec),
         # the shuffle test is slow, so it is reused until the results change
         "selfbreak": prev_selfbreak if prev_selfbreak is not None else self_break(table, market),
         "experts": _experts_table(rep),
@@ -658,16 +714,17 @@ def cycle(fetch: bool = True, now: dt.datetime | None = None, lock_new: bool = T
             return _refresh_only(prev, sync_info, now)
         markets, created = {}, []
         closed = closed_map(table)
+        rec = recency.Recency(table)
         for m in config.MARKET_KEYS:
             old = (prev.get("markets") or {}).get(m) or {}
             payload, extra = _analyse_market(table, m, preds, now, lock_new,
-                                             old.get("selfbreak") if same else None, closed)
+                                             old.get("selfbreak") if same else None, closed, rec)
             if extra and extra[0] is not None:
                 storage.append_prediction(extra[0])
                 preds.append(extra[0])
                 created.append(f"{m} {extra[0]['date']}")
             if extra:
-                payload["live"] = _live(m, preds, table, extra[1], now, payload.get("decision"))
+                payload["live"] = _live(m, preds, table, extra[1], now, payload.get("decision"), rec)
             markets[m] = payload
 
         dash = {
@@ -699,14 +756,18 @@ def load_dashboard() -> dict | None:
 
 def backtest(market: str, days: int = 7) -> tuple[list[dict], dict]:
     """Walk-forward test of the last `days` draws (what the CLI prints)."""
-    sd = SeriesData(storage.load_table(), market)
+    table = storage.load_table()
+    sd = SeriesData(table, market)
     if sd.n < MIN_DATA + days:
         raise ValueError(f"{market}: sirf {sd.n} result hain")
     rep = replay(sd, start=min(config.MIN_TRAIN, sd.n - days))
+    rec = recency.Recency(table)
+    official_steps(rep, rec)
     rows = []
     for s in rep.steps[-days:]:
         sc = score(s.mix, s.actual)
         rows.append({"date": s.date.isoformat(), "actual": s.actual,
                      "top10": [v for v, _ in top_list(s.mix)], **sc,
-                     "why": postmortem(s, rep.experts, sc)["lines"]})
+                     "why": postmortem(s, rep.experts, sc, list_source=_source(s), ensemble_lines=False)["lines"]
+                     + lessons(rec, market, s.date, s.actual)})
     return rows, summarize([score(s.mix, s.actual) for s in rep.steps[-days:]])

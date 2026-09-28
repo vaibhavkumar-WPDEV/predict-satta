@@ -28,4 +28,9 @@ VERSIONS = [
      "change": "Signal quality, EDGE/NO-EDGE decision, calibrated probability, numerology+tithi layer, "
                "cyclical time features, arrival-time window, 30-din Monte Carlo",
      "top10": {"disawar": 11.4, "faridabad": 10.0, "ghaziabad": 10.0, "gali": 10.8, "all": 10.54}},
+    {"version": "4.0", "date": "2026-09-29", "span": "2021–26, sabhi versions same data (1,996 din/market)",
+     "change": "Galtiyon ki jaanch ke baad: Top-10 seedhe cross-market recency se (30 models ka merge us "
+               "ek asli pattern ko dheela kar raha tha); 12 settings, har result ke baad HIT record se "
+               "khud setting chunti hai; naya result 2 baar dikhne par hi use hota hai (galat data se bachav)",
+     "top10": {"disawar": 12.2, "faridabad": 10.6, "ghaziabad": 12.1, "gali": 11.5, "all": 11.57}},
 ]

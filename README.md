@@ -170,6 +170,27 @@ Test me: jo model hamesha 1 se chookta tha, uske saath tool ne "+1" seekh kar 10
 - **Arrival window:** watcher ke dekhe samay se "result aam taur par kab aata hai".
 - Mausam ka data uplabdh nahi; tarot random hai — dono use nahi hote.
 
+### 4.2a7 Engine 4.0: galtiyon ki jaanch ke baad (29 Sep 2026)
+
+Live misses ki jaanch me do cheezein mili:
+
+1. **Galat data:** 28 Sep 21:34 par website Ghaziabad = 48 dikha rahi thi, 22:18 par 03 kiya.
+   Gali 28 ki prediction us galat 48 se lock hui. Ab pichle 2 din ka koi bhi naya result, jo sirf
+   ek website par ho, tabhi use hota hai jab agle fetch me (10 min baad) wahi number dobara dikhe;
+   2 websites mile to turant. (`scraper.merge`, `data/sync_state.json` → `pending`)
+2. **Asli pattern dheela ho raha tha:** 5 saal me sirf ek pattern sabit hua — jo number haal me
+   kisi bhi market me aaya, woh thoda zyada dobara aata hai (pichle 3 results 1.22x). 30 models
+   ka merge ise dheela kar deta tha. Engine 4.0 me Top-10 seedhe is recency se banti hai
+   (`satta/engine/recency.py`): score = Σ λ^age · ([number aaya] + palti_w · [palti aaya])
+   pichle 60 results (chaaron markets) par. 12 settings (λ ∈ 0.5…0.95, palti 0/0.3) saath chalti
+   hain; har result ke baad har setting ka HIT/MISS record hota hai aur agli list us setting se
+   banti hai jiske pichle 1460 results me sabse zyada HIT — future data se kuch tune nahi hota.
+
+Same 5 saal ke data par walk-forward Top-10: Disawar 12.2%, Faridabad 10.6%, Ghaziabad 12.1%,
+Gali 11.5%, chaaron 11.57% (p = 0.000003); engine 3.3 par 10.54% tha. Andar/Bahar top-5 ~49–53%.
+Har MISS ke "kyu?" me ab likha hota hai: number pichle 60 results me aaya tha ya nahi, kitni
+settings ne use pakda, aur agli list ki setting kya hui.
+
 ### 4.2b Khud ko todo + seekhne ka asar
 
 - **Shuffle test:** engine ko 3 baar aisi history par chalaya jaata hai jisme dates ka order

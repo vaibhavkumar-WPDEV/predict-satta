@@ -60,6 +60,7 @@ class Step:
     ranks: np.ndarray          # each expert's rank of the actual number (1 = best)
     equal: np.ndarray          # same experts, equal weights, no learning (control)
     chosen: int = -1           # candidate whose Top-10 list was used (len(experts) = ensemble)
+    setting: int = -1          # recency setting of the official list (engine 4.0), -1 = none
 
 
 @dataclass
@@ -238,10 +239,13 @@ def score(dist: np.ndarray, actual: int) -> dict:
 
 
 def postmortem(step: Step, experts: list[Expert], official: dict | None = None,
-               top10: list[int] | None = None, list_source: str | None = None) -> dict:
+               top10: list[int] | None = None, list_source: str | None = None,
+               ensemble_lines: bool = True) -> dict:
     """Why the prediction hit or missed, and what the system learned (Hinglish).
 
     official/top10 are the locked live prediction's score and list, when there is one.
+    ensemble_lines=False leaves out the 30-model ensemble's lines (engine 4.0 lists
+    come from the recency engine, which adds its own).
     """
     sc = official or score(step.mix, step.actual)
     a = step.actual
@@ -265,6 +269,8 @@ def postmortem(step: Step, experts: list[Expert], official: dict | None = None,
         src = "Ensemble (sab models ka merge)" if step.chosen == len(experts) else experts[step.chosen].label
         lines.append(f"Is din ki Top-10 list: {src} (Top-10 selector ne chuni).")
     best = int(np.argmin(step.ranks))
+    if not ensemble_lines:
+        return {"lines": lines, "best_expert": experts[best].name}
     lines.append(f"Aaj sabse sahi model: {experts[best].label} — isne {a:02d} ko rank "
                  f"{int(step.ranks[best])} diya.")
     blame = step.weights * np.maximum(0, 0.01 - step.p_actual)

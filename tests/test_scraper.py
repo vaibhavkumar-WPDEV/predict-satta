@@ -115,3 +115,22 @@ def test_merge_majority_vote():
     # tie -> higher priority (lower number) wins
     rows, _, _ = scraper.merge([], triples[:2], "now")
     assert rows[0]["value"] == 11
+
+
+def test_fresh_single_source_value_waits_for_a_second_fetch():
+    d = dt.date(2026, 9, 28)
+    recent = d - dt.timedelta(days=2)
+    pending = {}
+    # first sighting of a wrong value is held back
+    rows, _, changed = scraper.merge([], [("a", 1, "ghaziabad", d, 48)], "21:34", pending, recent)
+    assert rows == [] and changed == 0 and pending["ghaziabad|2026-09-28"]["value"] == 48
+    # the site corrects itself: the new value needs its own second sighting
+    rows, _, changed = scraper.merge(rows, [("a", 1, "ghaziabad", d, 3)], "22:18", pending, recent)
+    assert rows == [] and pending["ghaziabad|2026-09-28"]["value"] == 3
+    rows, _, changed = scraper.merge(rows, [("a", 1, "ghaziabad", d, 3)], "22:28", pending, recent)
+    assert changed == 1 and rows[0]["value"] == 3 and pending == {}
+    # two agreeing sources are used at once; old dates are not held
+    rows, _, changed = scraper.merge([], [("a", 1, "gali", d, 3), ("b", 2, "gali", d, 3)], "t", pending, recent)
+    assert changed == 1 and pending == {}
+    rows, _, changed = scraper.merge([], [("a", 1, "gali", dt.date(2026, 9, 1), 7)], "t", pending, recent)
+    assert changed == 1 and pending == {}

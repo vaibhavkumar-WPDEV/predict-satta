@@ -2,7 +2,7 @@ import datetime as dt
 
 import numpy as np
 
-from satta.engine import formulas, theorems
+from satta.engine import formulas, recency, theorems
 from satta.engine.base import SeriesData
 from satta.engine.ensemble import replay, score, summarize
 from satta.engine.experts import default_experts
@@ -204,3 +204,24 @@ def test_theorems_flag_cross_market_only_when_real():
     f = {t["id"]: t for t in theorems.findings(sd)}
     assert f["T8GAA"]["pattern"] is True
     assert f["T1"]["pattern"] is False
+
+
+def test_recency_engine_learns_the_repeating_market_and_never_looks_ahead():
+    rng = np.random.default_rng(7)
+    start = dt.date(2025, 1, 1)
+    table = {m: {} for m in ("disawar", "faridabad", "ghaziabad", "gali")}
+    for k in range(200):
+        d = start + dt.timedelta(days=k)
+        for m in ("disawar", "faridabad", "ghaziabad"):
+            table[m][d] = int(rng.integers(100))
+        table["gali"][d] = table["ghaziabad"][d]   # Gali repeats that evening's Ghaziabad
+    rec = recency.Recency(table)
+    d = start + dt.timedelta(days=150)
+    i = rec.pos[("gali", d)]
+    p, c = rec.dist(i)
+    assert int(np.argmax(p)) == table["ghaziabad"][d]   # the latest number is ranked first
+    # the setting chosen for draw i depends only on earlier draws
+    rec.H[i:] = ~rec.H[i:]
+    assert rec.choice(i) == c
+    # the next, unknown draw is placed after everything known
+    assert rec.index_of("disawar", start + dt.timedelta(days=200)) == len(rec.vals)

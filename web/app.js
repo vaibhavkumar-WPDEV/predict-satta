@@ -126,7 +126,7 @@ function predictionCard(m, hero) {
       <span>Andar top-5 (pehla digit): ${dg.andar.map(([d, pr], i) => `<b>${d}</b>${i === 0 ? "<sup>#1</sup>" : ""}<small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>
       <span>Bahar top-5 (doosra digit): ${dg.bahar.map(([d, pr], i) => `<b>${d}</b>${i === 0 ? "<sup>#1</sup>" : ""}<small class="muted">${pct(pr, 0)}</small>`).join(" ")}</span>
     </div>
-    ${p.model ? `<div class="muted small">Is list ka model (Top-10 selector ne chuna): <b>${esc(p.model)}</b></div>` : ""}
+    ${p.model ? `<div class="muted small">Is list ki setting (tool ne khud chuni): <b>${esc(p.model)}</b></div>` : ""}
     ${formulas ? `<h3>Tool ke formule (is din ke liye)</h3>${formulas}` : ""}
     <h3>Proof</h3>
     <div class="muted" style="font-size:12px">Locked: ${fmtTime(p.created_at)} · ${p.trained_on} results par trained</div>
@@ -176,7 +176,7 @@ function predictionReport(m, p) {
       ${row("CONTRADICTING MODELS", p.contra ? (p.contra.map(esc).join(", ") || "koi bada virodh nahi") : "is purani prediction ke saath record nahi hua")}
       ${row("MONTE CARLO (agle 30 din)", `Top-10 ~${mc.expected} baar sahi (90%: ${mc.lo}–${mc.hi}); random se ~${mc.random.expected} (${mc.random.lo}–${mc.random.hi})`)}
       ${row("MODEL VERSION", `Engine ${esc(p.engine)} (locked ${fmtTime(p.created_at)})${oldNote}`)}
-      ${row("WHAT WOULD CHANGE IT", "Naya result (weights aur selector badalte hain), usi din pehle aane wale market ka result, ya kisi doosre model ki Top-10 ka lagataar behtar record.")}
+      ${row("WHAT WOULD CHANGE IT", "Har naya result (kisi bhi market ka) list badal deta hai; har MISS ke baad 12 settings ka HIT record update hota hai aur jo setting pichle ~1 saal me sabse zyada sahi rahi, agli list usi se banti hai.")}
     </table></div>`;
 }
 
@@ -451,8 +451,8 @@ function renderLearning() {
         <div class="stat"><div class="s">Random chance</div><div class="v">10.0%</div><div class="s">avg rank 50.5 · log-loss 4.605</div></div>
       </div>
       <div id="pchart" style="margin-top:12px"></div>
-      ${pg.selector ? `<h3>Top-10 selector: kis model ki list sabse zyada sahi aati hai</h3>
-        <p class="muted">Har result ke baad har model ki (aur sabke merge ki) Top-10 check hoti hai. Jiski list ab tak sabse zyada baar sahi aayi, agli list usi ki hoti hai. Abhi: <b>${esc(pg.selector.chosen)}</b>.</p>
+      ${pg.selector ? `<h3>Galti se seekhna: kaunsi setting sabse zyada HIT deti hai</h3>
+        <p class="muted">Engine 4.0 ki Top-10 "recency" se banti hai: jo number haal me kisi bhi market me aaya, woh thoda zyada baar dobara aata hai (5 saal me sabit hua ek-matra pattern). 12 settings (λ = purane result ka asar kitni jaldi ghate, palti ka hissa) saath chalti hain. Har result ke baad har setting ka HIT/MISS likha jata hai; pichle ${pg.selector.judged_on || "~1460"} results me jiske sabse zyada HIT, agli list usi se. Abhi: <b>${esc(pg.selector.chosen)}</b>.</p>
         <div class="row">${pg.selector.ranking.map((r, i) => `<span class="pill ${i === 0 ? "good" : ""}">${esc(r.label)}: ${pct(r.hit10_rate)}</span>`).join("")}</div>` : ""}
       ${pg.tuning && pg.tuning.length ? `<h3>Self-tuning (meta-learning): tool ne khud chuna kitni tezi se seekhe</h3>
         <p class="muted">η = learning speed (bada = ek result se zyada badlaav), α = bhoolne ki dar (bada = purana jaldi bhoole). 9 settings saath chalti hain, jo sahi nikli uska bharosa badhta hai.</p>

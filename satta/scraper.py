@@ -346,8 +346,16 @@ def agreement(triples: list[tuple]) -> list[dict]:
     return out
 
 
-def merge(existing: list[dict], triples: list[tuple], fetched_at: str) -> tuple[list[dict], list[dict], int]:
-    """Majority vote per (market, date). Returns (rows, conflicts, n_changed)."""
+def merge(existing: list[dict], triples: list[tuple], fetched_at: str,
+          pending: dict | None = None, recent_from: dt.date | None = None) -> tuple[list[dict], list[dict], int]:
+    """Majority vote per (market, date). Returns (rows, conflicts, n_changed).
+
+    With `pending`, a new or changed value dated on/after `recent_from` that only one
+    source shows is held back until the next fetch shows the same value again (sites
+    sometimes show a wrong number for a few minutes after the result time, e.g.
+    Ghaziabad 28 Sep 2026 read 48 at 21:34 and 03 from 22:18). Two agreeing sources
+    are accepted at once. `pending` is updated in place.
+    """
     votes: dict[tuple[str, str], list[tuple[int, int, str]]] = defaultdict(list)
     for sid, prio, mk, d, v in triples:
         votes[(mk, d.isoformat())].append((v, prio, sid))
@@ -363,12 +371,23 @@ def merge(existing: list[dict], triples: list[tuple], fetched_at: str) -> tuple[
             conflicts.append({"market": key[0], "date": key[1],
                               "values": {sid: v for v, _, sid in vs}, "chosen": winner})
         old = rows.get(key)
+        pkey = "|".join(key)
         if old is None or int(old["value"]) != winner:
+            support = sorted({sid for v, _, sid in vs if v == winner})
+            if (pending is not None and recent_from is not None and key[1] >= recent_from.isoformat()
+                    and len(support) < 2 and (pending.get(pkey) or {}).get("value") != winner):
+                pending[pkey] = {"value": winner, "source": "+".join(support), "first_seen": fetched_at}
+                continue  # wait for the next fetch to show the same value
             changed += 1
             rows[key] = {"market": key[0], "date": key[1], "value": winner,
-                         "source": "+".join(sorted({sid for v, _, sid in vs if v == winner})),
-                         "fetched_at": fetched_at}
+                         "source": "+".join(support), "fetched_at": fetched_at}
+        if pending is not None:
+            pending.pop(pkey, None)
     return list(rows.values()), conflicts, changed
+
+
+# results of the last CONFIRM_DAYS days need a second sighting before they are used
+CONFIRM_DAYS = 2
 
 
 def sync(now: dt.datetime | None = None, full: bool = False) -> dict:
@@ -394,11 +413,19 @@ def sync(now: dt.datetime | None = None, full: bool = False) -> dict:
         start = max(config.HISTORY_START, today - dt.timedelta(days=40))
     triples, status = fetch_all(start, today, now=now)
     storage.save_raw(triples)
-    rows, conflicts, changed = merge(existing, triples, now.isoformat(timespec="seconds"))
+    state = storage.load_sync_state()
+    recent_from = today - dt.timedelta(days=CONFIRM_DAYS)
+    before = state.get("pending") or {}
+    pending = {k: v for k, v in before.items() if k.split("|")[1] >= recent_from.isoformat()}
+    rows, conflicts, changed = merge(existing, triples, now.isoformat(timespec="seconds"),
+                                     pending=pending, recent_from=recent_from)
     if changed:
         storage.save_result_rows(rows)
+    if pending != before:
+        state["pending"] = pending
+        storage.save_sync_state(state)
     return {"from": start.isoformat(), "to": today.isoformat(), "new_or_changed": changed,
-            "sources": status, "agreement": agreement(triples),
+            "waiting_confirmation": pending, "sources": status, "agreement": agreement(triples),
             "conflicts": conflicts[-50:], "total_rows": len(rows)}
 
 
