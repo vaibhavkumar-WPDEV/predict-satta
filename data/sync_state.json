@@ -1,5 +1,11 @@
 {
  "history_start": "2021-01-01",
  "last_full": "2026-09-26T11:52:09+05:30",
- "pending": {}
+ "pending": {
+  "faridabad|2026-09-29": {
+   "value": 57,
+   "source": "sattacom",
+   "first_seen": "2026-09-29T18:17:42+05:30"
+  }
+ }
 }
