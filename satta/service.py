@@ -596,8 +596,9 @@ def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=No
     wait_info = None
     if locked is None:
         wait_info = {"date": target.isoformat(), "deadline": deadline.isoformat(timespec="minutes"),
-                     "for": [config.MARKETS[o]["name"] for o in waiting],
-                     "for_times": [config.MARKETS[o]["result_time"] for o in waiting]}
+                     "for": [config.MARKETS[o]["name"] for o, _ in waiting],
+                     "for_times": [config.MARKETS[o]["result_time"] for o, _ in waiting],
+                     "for_dates": [d.isoformat() for _, d in waiting]}
     payload = {
         **base, "ready": True,
         "closed_days": closed_days(sd),
@@ -627,20 +628,30 @@ def closed_map(table: dict) -> dict[str, list[str]]:
 
 
 def lock_status(table: dict, sd: SeriesData, target: dt.date, now: dt.datetime,
-                closed: dict[str, list[str]]) -> tuple[bool, list[str], dt.datetime]:
+                closed: dict[str, list[str]]) -> tuple[bool, list[tuple[str, dt.date]], dt.datetime]:
     """Is it time to lock the prediction for `target`?
 
-    A market's prediction waits for the same day's results of the markets declared
-    earlier that day (e.g. Faridabad waits for that morning's Disawar), so they can be
-    used. It never waits past LOCK_MARGIN before its own result time.
+    A market's prediction waits for every result of the other markets declared between
+    its own last result and the target draw: the same day's earlier markets (Faridabad
+    waits for that morning's Disawar) and the previous day's later ones (Disawar waits for
+    last night's Faridabad, Ghaziabad and Gali). The recency engine leans most on these
+    latest results and the walk-forward test always had them, so the lock uses them too.
+    It never waits past LOCK_MARGIN before its own result time.
     """
+    slot = {m: config.MARKETS[m]["result_time"] for m in config.MARKET_KEYS}
+    hi = (target, slot[sd.market])
+    lo = (sd.dates[-1], slot[sd.market]) if sd.n else (target - dt.timedelta(days=1), "")
     waiting = []
-    for o in sd.earlier:
-        if target in table.get(o, {}):
-            continue
-        if any(DAY_KINDS[k](target) for k in closed.get(o, [])):
-            continue  # that market is closed on this day
-        waiting.append(o)
+    d = max(lo[0], target - dt.timedelta(days=3))  # an old gap is not waited for
+    while d <= target:
+        for o in config.MARKET_KEYS:
+            if o == sd.market or not lo < (d, slot[o]) < hi or d in table.get(o, {}):
+                continue
+            if any(DAY_KINDS[k](d) for k in closed.get(o, [])):
+                continue  # that market is closed on this day
+            waiting.append((o, d))
+        d += dt.timedelta(days=1)
+    waiting.sort(key=lambda x: (x[1], slot[x[0]]))
     deadline = config.result_datetime(sd.market, target) - LOCK_MARGIN
     return (not waiting) or now >= deadline, waiting, deadline
 

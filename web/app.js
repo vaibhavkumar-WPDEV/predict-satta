@@ -90,7 +90,7 @@ function predictionCard(m, hero) {
   if (!p) {
     const w = m.waiting;
     const msg = w && w.for && w.for.length
-      ? `${esc(w.date)} ki prediction tab lock hogi jab usi din ka ${w.for.map((n, i) => `${esc(n)} (~${esc(w.for_times[i])})`).join(", ")} result aa jayega, taaki woh bhi calculation me jude. Der hui to ${fmtTime(w.deadline)} par bina uske lock ho jayegi.`
+      ? `${esc(w.date)} ki prediction tab lock hogi jab ${w.for.map((n, i) => `${esc(n)} ${esc((w.for_dates || [])[i] ? w.for_dates[i].slice(5) : "")} (~${esc(w.for_times[i])})`).join(", ")} ka result aa jayega, taaki sabse taaza result bhi calculation me jude. Der hui to ${fmtTime(w.deadline)} par bina uske lock ho jayegi.`
       : "Prediction abhi lock nahi hui.";
     const r = lastEvaluated(m);
     return `<div class="card ${hero ? "hero" : ""}"><h2>${esc(m.name)} <span class="muted">(${esc(m.short)})</span></h2>
@@ -252,7 +252,7 @@ function statusStrip(d) {
         <div class="small">Andar: <b>${digitsOf(m.next).andar.map(([d]) => d).join(" · ")}</b> · Bahar: <b>${digitsOf(m.next).bahar.map(([d]) => d).join(" · ")}</b></div>`;
     } else if (m.waiting && m.waiting.date === today) {
       body = `<div class="big">⏳</div><div>~${esc(m.result_time)} IST</div>
-        <div class="muted small">Prediction ${m.waiting.for.length ? esc(m.waiting.for.join(", ")) + " ke aaj ke result ke baad" : "jaldi"} lock hogi</div>`;
+        <div class="muted small">Prediction ${m.waiting.for.length ? esc(m.waiting.for.join(", ")) + " ke result ke baad" : "jaldi"} lock hogi</div>`;
     } else {
       body = `<div class="big">–</div><div class="muted">Aaj result nahi (chhutti) · agla ${esc(m.next ? m.next.date : "")}</div>`;
     }

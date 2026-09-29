@@ -128,10 +128,11 @@ Markov / CTW / neural network poore 5 saal par.
 ### 4.2a3 Markets ka same-day connection
 
 Din me results is kram me aate hain: Disawar ~05:00 → Faridabad ~18:15 → Ghaziabad ~21:30 →
-Gali ~23:30. Kisi market ki prediction usi din ke pehle aaye markets ke result ka intezaar
-karti hai (jaise Faridabad subah ke Disawar ka), taaki woh number bhi formule, cross-market
-model, neural network aur genetic programming me jude. Der ho to result time se 60 minute
-pehle bina uske lock ho jaati hai. Theorems tab me "(aaj)" wale tests yeh connection check
+Gali ~23:30. Kisi market ki prediction apne pichle result ke baad aaye doosre markets ke
+har result ka intezaar karti hai — usi din ke pehle wale (jaise Faridabad subah ke Disawar ka)
+aur pichli raat ke baad wale (jaise Disawar raat ke Faridabad, Ghaziabad, Gali ka; engine 4.0
+se) — taaki sabse taaza number bhi calculation me jude, bilkul walk-forward test jaisa. Der ho
+to result time se 60 minute pehle bina uske lock ho jaati hai. Theorems tab me "(aaj)" wale tests yeh connection check
 karte hain.
 
 ### 4.2a4 Miss-correction

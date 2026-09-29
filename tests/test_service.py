@@ -63,6 +63,20 @@ def test_old_three_digit_locks_are_filled_from_the_locked_distribution():
     assert service._digits([[3, 0.2], [1, 0.3], [4, 0.1]], probs) == [3, 1, 4, 8, 5]
 
 
+def test_disawar_waits_for_last_nights_markets(data_dir):
+    rows = synthetic_rows(60)  # 2026-01-01 .. 2026-03-01, all four markets
+    rows = [r for r in rows if not (r["date"] == "2026-03-01" and r["market"] in ("ghaziabad", "gali"))]
+    write_results(data_dir / "results.csv", rows)
+    # 2 March 01:00: Disawar 2 March needs last night's Ghaziabad and Gali first
+    service.cycle(fetch=False, now=at(2026, 3, 2, 1))
+    assert not [p for p in storage.load_predictions() if p["market"] == "disawar"]
+    w = json.loads((data_dir / "dashboard.json").read_text())["markets"]["disawar"]["waiting"]
+    assert w["for"] == ["Ghaziabad", "Gali"] and w["for_dates"] == ["2026-03-01", "2026-03-01"]
+    # they never come: it still locks at the deadline, an hour before its own result
+    service.cycle(fetch=False, now=at(2026, 3, 2, 4, 1))
+    assert [p["date"] for p in storage.load_predictions() if p["market"] == "disawar"] == ["2026-03-02"]
+
+
 def test_unchanged_data_takes_the_fast_path(data_dir):
     write_results(data_dir / "results.csv", synthetic_rows(60))
     first = service.cycle(fetch=False, now=at(2026, 3, 2, 9))
