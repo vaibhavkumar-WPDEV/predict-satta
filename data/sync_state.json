@@ -1,5 +1,11 @@
 {
  "history_start": "2021-01-01",
  "last_full": "2026-09-26T11:52:09+05:30",
- "pending": {}
+ "pending": {
+  "disawar|2026-09-30": {
+   "value": 25,
+   "source": "satta-king-fast",
+   "first_seen": "2026-09-30T05:24:09+05:30"
+  }
+ }
 }
