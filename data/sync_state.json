@@ -1,11 +1,5 @@
 {
  "history_start": "2021-01-01",
  "last_full": "2026-09-26T11:52:09+05:30",
- "pending": {
-  "ghaziabad|2026-10-04": {
-   "value": 98,
-   "source": "satta-king-fast",
-   "first_seen": "2026-10-04T22:12:51+05:30"
-  }
- }
+ "pending": {}
 }
