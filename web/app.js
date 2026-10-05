@@ -271,7 +271,7 @@ function statusStrip(d) {
     const actual = row && row.actual != null ? row.actual : res ? res[m.key] : null;
     let body;
     if (actual != null) {
-      body = `<div class="big">${jd(actual)}</div><div>Jodi ${row ? resultPill(row) : ""}</div>
+      body = `<div class="big">${jd(actual)}</div><div>Jodi ${row ? resultPill(row) : ""}${row && row.late ? ' <span class="pill bad" title="Result time ke baad lock hui, isliye record me nahi gini">LATE · gini nahi</span>' : ""}</div>
         ${row ? `<div class="small">Andar ${row.andar_hit ? "✔" : "✘"} (${row.andar.join("·")}) · Bahar ${row.bahar_hit ? "✔" : "✘"} (${row.bahar.join("·")})</div>
         <div class="muted small">Locked top-10: ${row.top10.map(jd).join(" ")}</div>` : ""}`;
     } else if (m.next && m.next.date === today) {
