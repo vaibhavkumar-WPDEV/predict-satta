@@ -72,8 +72,10 @@ def test_disawar_waits_for_last_nights_markets(data_dir):
     assert not [p for p in storage.load_predictions() if p["market"] == "disawar"]
     w = json.loads((data_dir / "dashboard.json").read_text())["markets"]["disawar"]["waiting"]
     assert w["for"] == ["Ghaziabad", "Gali"] and w["for_dates"] == ["2026-03-01", "2026-03-01"]
-    # they never come: it still locks at the deadline, an hour before its own result
-    service.cycle(fetch=False, now=at(2026, 3, 2, 4, 1))
+    # they never come: it still locks at the deadline, 20 minutes before its own result
+    service.cycle(fetch=False, now=at(2026, 3, 2, 4, 39))
+    assert not [p for p in storage.load_predictions() if p["market"] == "disawar"]
+    service.cycle(fetch=False, now=at(2026, 3, 2, 4, 41))
     assert [p["date"] for p in storage.load_predictions() if p["market"] == "disawar"] == ["2026-03-02"]
 
 
@@ -138,6 +140,6 @@ def test_learned_month_end_holiday_is_skipped(data_dir):
 
 def test_holiday_moves_target_forward(data_dir):
     write_results(data_dir / "results.csv", synthetic_rows(40))  # last date 2026-02-09
-    service.cycle(fetch=False, now=at(2026, 2, 13, 17, 30))  # past the lock deadline
+    service.cycle(fetch=False, now=at(2026, 2, 13, 18, 0))  # past the lock deadline (17:55)
     frbd = [p for p in storage.load_predictions() if p["market"] == "faridabad"][0]
     assert frbd["date"] == "2026-02-13" and frbd["late"] is False

@@ -620,7 +620,10 @@ def _analyse_market(table, market, preds, now, lock_new: bool, prev_selfbreak=No
     return payload, (new, rep)
 
 
-LOCK_MARGIN = dt.timedelta(minutes=60)
+# Latest lock: 20 min before the official result time. Sources show results 15-60 min after
+# it (Gali never before 00:15 for 23:30), and Gali must still get that evening's Ghaziabad,
+# which arrives ~22:23 (sometimes after midnight) - a 60 min margin cut it off at 22:30.
+LOCK_MARGIN = dt.timedelta(minutes=20)
 
 
 def closed_map(table: dict) -> dict[str, list[str]]:

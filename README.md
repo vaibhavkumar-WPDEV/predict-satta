@@ -132,7 +132,7 @@ Gali ~23:30. Kisi market ki prediction apne pichle result ke baad aaye doosre ma
 har result ka intezaar karti hai — usi din ke pehle wale (jaise Faridabad subah ke Disawar ka)
 aur pichli raat ke baad wale (jaise Disawar raat ke Faridabad, Ghaziabad, Gali ka; engine 4.0
 se) — taaki sabse taaza number bhi calculation me jude, bilkul walk-forward test jaisa. Der ho
-to result time se 60 minute pehle bina uske lock ho jaati hai. Theorems tab me "(aaj)" wale tests yeh connection check
+to result time se 20 minute pehle bina uske lock ho jaati hai (Ghaziabad ~22:23 tak aata hai, isliye Gali 23:10 tak rukti hai). Theorems tab me "(aaj)" wale tests yeh connection check
 karte hain.
 
 ### 4.2a4 Miss-correction
