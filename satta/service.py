@@ -483,6 +483,22 @@ def _digits(locked: list, probs: np.ndarray) -> list[int]:
     return out + rest[:DIGIT_K - len(out)]
 
 
+GRID_N = 25
+
+
+def top_n(pred: dict, n: int = GRID_N) -> list[int]:
+    """A locked prediction's top-n: its locked Top-10 first, then its locked distribution."""
+    top = [v for v, _ in pred["top10"]]
+    dist = np.array(pred["dist"])
+    return (top + [int(v) for v in np.argsort(-dist, kind="stable") if int(v) not in top])[:n]
+
+
+def grid_scores(row: dict, actual: int) -> dict:
+    """25-number checks of a live row: Andar top-5 x Bahar top-5 grid, and the top-25 list."""
+    return {"grid_hit": actual // 10 in row["andar"][:DIGIT_K] and actual % 10 in row["bahar"][:DIGIT_K],
+            "top25_hit": actual in row["top25"]}
+
+
 def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.datetime,
           decision: dict | None = None, rec: recency.Recency | None = None) -> dict:
     steps = {s.date.isoformat(): s for s in rep.steps}
@@ -494,7 +510,8 @@ def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.date
         row = {"date": p["date"], "created_at": p["created_at"], "late": p.get("late", False),
                "engine": p.get("engine"), "hash": p["hash"], "verified": storage.verify_prediction(p),
                "top10": [v for v, _ in p["top10"]], "andar": _digits(p["andar"], at),
-               "bahar": _digits(p["bahar"], ab), "locked_digits": len(p["andar"]), "actual": actual}
+               "bahar": _digits(p["bahar"], ab), "locked_digits": len(p["andar"]), "actual": actual,
+               "top25": top_n(p)}
         if actual is None:
             overdue = now.astimezone(config.IST) > config.result_datetime(market, d) + dt.timedelta(days=2)
             row["status"] = "no-result" if overdue else "pending"
@@ -506,7 +523,7 @@ def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.date
             row.update(status="hit" if sc["hit10"] else "miss", rank=sc["rank"], hit1=sc["hit1"],
                        andar_hit=sc["andar_hit"], bahar_hit=sc["bahar_hit"],
                        andar1_hit=bool(row["andar"]) and a == row["andar"][0],
-                       bahar1_hit=bool(row["bahar"]) and b == row["bahar"][0])
+                       bahar1_hit=bool(row["bahar"]) and b == row["bahar"][0], **grid_scores(row, actual))
             step = steps.get(p["date"])
             if step is not None:
                 source = p.get("model") or f"engine {p.get('engine', '?')} (Top-10 selector se pehle)"
@@ -521,7 +538,8 @@ def _live(market: str, preds: list[dict], table: dict, rep: Replay, now: dt.date
         rows.append(row)
     digits = {}
     for key, chance in (("andar_hit", DIGIT_K / 10), ("bahar_hit", DIGIT_K / 10),
-                        ("andar1_hit", 0.1), ("bahar1_hit", 0.1)):
+                        ("andar1_hit", 0.1), ("bahar1_hit", 0.1),
+                        ("grid_hit", GRID_N / 100), ("top25_hit", GRID_N / 100)):
         k = sum(1 for r in counted if r[key])
         digits[key] = {"hits": k, "n": len(counted), "chance": chance}
     return {"summary": _clean(summarize(scores)), "digits": digits, "rows": rows}
@@ -547,7 +565,7 @@ def prediction_history(markets: dict) -> str:
     w = csv.writer(out)
     w.writerow(["date", "market", "locked_at", "engine", "top10", f"andar_top{DIGIT_K}",
                 f"bahar_top{DIGIT_K}", "result", "jodi", "rank", "andar", "bahar", "andar_#1", "bahar_#1",
-                "late", "hash_ok", "hash"])
+                "grid25", "top25", "late", "hash_ok", "hash"])
     mark = {True: "HIT", False: "MISS", None: ""}
     rows = [(m, r) for m, pl in markets.items() for r in (pl.get("live") or {}).get("rows", [])]
     for m, r in sorted(rows, key=lambda x: (x[1]["date"], config.MARKETS[x[0]]["result_time"]), reverse=True):
@@ -556,7 +574,8 @@ def prediction_history(markets: dict) -> str:
                     " ".join(f"{v:02d}" for v in r["top10"]), " ".join(map(str, r["andar"])),
                     " ".join(map(str, r["bahar"])), f"{r['actual']:02d}" if done else "",
                     r["status"].upper(), r.get("rank", ""),
-                    *(mark[r.get(k) if done else None] for k in ("andar_hit", "bahar_hit", "andar1_hit", "bahar1_hit")),
+                    *(mark[r.get(k) if done else None] for k in ("andar_hit", "bahar_hit", "andar1_hit", "bahar1_hit",
+                                                                 "grid_hit", "top25_hit")),
                     "yes" if r.get("late") else "", "yes" if r["verified"] else "NO", r["hash"]])
     return out.getvalue()
 

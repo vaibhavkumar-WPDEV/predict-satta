@@ -48,6 +48,7 @@ def test_cycle_locks_prediction_and_scores_it_later(data_dir):
     # andar/bahar are top-5 digits, scored like the jodi list
     assert len(done["andar"]) == len(done["bahar"]) == 5
     assert done["andar_hit"] and done["bahar_hit"] and live["digits"]["andar_hit"]["chance"] == 0.5
+    assert len(done["top25"]) == 25 and done["top25_hit"] and live["digits"]["top25_hit"]["hits"] == 1
     # every locked prediction is kept in the history CSV with its result
     hist = (data_dir / "prediction_history.csv").read_text().splitlines()
     assert hist[0].startswith("date,market,locked_at")

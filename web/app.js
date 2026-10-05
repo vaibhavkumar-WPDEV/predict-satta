@@ -234,7 +234,7 @@ function renderToday() {
       ${allFailed ? "<br>Koi bhi result website nahi khuli (internet/firewall check karo). Sources: " + srcs.map((s) => esc(s.source)).join(", ") : ""}</div>`;
   }
   $("#tab-today").innerHTML = (isPattern() ? patternIntro(d) : "") + statusStrip(d) + banner + (primary ? predictionCard(primary, true) : "") +
-    (primary ? coverageCard(primary) : "") +
+    (primary ? gridBox(primary) : "") + (primary ? coverageCard(primary) : "") +
     `<div class="grid">${others.map((m) => predictionCard(m, false)).join("")}</div>`;
   const rate = $("#payRate");
   if (rate) rate.addEventListener("change", (e) => { state.rate = Number(e.target.value) || 90; renderToday(); });
@@ -327,20 +327,6 @@ function coverageCard(m) {
       <td class="num"><b>${pct(r.tested)}</b></td><td class="num">${pct(r.random, 0)}</td>
       <td class="num">₹${(r.tested * 9 * 100 / r.k).toFixed(0)}</td></tr>`;
   }).join("");
-  const dg = digitsOf(p);
-  const top10 = new Set(p.top10.map(([v]) => v));
-  const g = c.grid;
-  const gridHtml = g ? `
-    <h3>Andar × Bahar jodi grid (${g.n} numbers)</h3>
-    <p class="muted small">Andar top-5 (line) × Bahar top-5 (column). <span class="hl">Rang wale</span> number Top-10 me bhi hain.
-      Asli test: ${c.days} din me asli number is grid me <b>${pct(g.tested)}</b> baar aaya (pichle 200 din ${pct(g.tested_200)}), random ${pct(g.random, 0)}.
-      ₹100 barabar baantne par ausatan wapas ₹${(g.tested * rate * 100 / g.n).toFixed(0)} (${rate} guna).</p>
-    <div class="table-wrap"><table class="grid5">
-      <thead><tr><th class="small">Andar ↓ · Bahar →</th>${dg.bahar.map(([b]) => `<th class="num">${b}</th>`).join("")}</tr></thead>
-      <tbody>${dg.andar.map(([a]) => `<tr><th>${a}</th>${dg.bahar.map(([b]) => {
-        const v = a * 10 + b;
-        return `<td class="num mono">${top10.has(v) ? `<span class="hl">${jd(v)}</span>` : jd(v)}</td>`;
-      }).join("")}</tr>`).join("")}</tbody></table></div>` : "";
   return `
   <div class="card">
     <h2>Percentage kaise badhe? Jitne zyada numbers, utna zyada chance</h2>
@@ -355,8 +341,47 @@ function coverageCard(m) {
     <div class="table-wrap"><table>
       <thead><tr><th></th><th>Digits</th><th class="num">Asli test</th><th class="num">Random</th><th class="num">₹100 par ausatan wapas<br><small class="muted">(9 guna rate)</small></th></tr></thead>
       <tbody>${digitRows(at, c.andar, "Andar")}${digitRows(ab, c.bahar, "Bahar")}</tbody></table></div>
-    ${gridHtml}
     <p class="muted" style="font-size:12px">Hisaab: N numbers par ₹100 barabar baantne se har number par ₹100/N lagta hai; asli number list me aaya to ₹100/N × rate milta hai. Ausatan wapas = asli test % × rate × 100 / N. Random picking me yeh hamesha ₹${rate} hota hai, chahe N kitna bhi ho.</p>
+  </div>`;
+}
+
+// "Grid box": the two 25-number sets of the next draw as 5x5 boxes, with their tested and live records.
+function gridBox(m) {
+  const c = m.coverage;
+  const p = m.next;
+  if (!m.ready || !c || !p || !p.dist) return "";
+  const rate = state.rate || 90;
+  const dg = digitsOf(p);
+  const top10 = new Set(p.top10.map(([v]) => v));
+  const top25 = ranked(p.top10, p.dist, 25).map(([v]) => v);
+  const grid = dg.andar.flatMap(([a]) => dg.bahar.map(([b]) => a * 10 + b));
+  const both = new Set(grid.filter((v) => top25.includes(v)));
+  const row = ((m.live && m.live.rows) || []).find((r) => r.date === p.date);
+  const actual = row && row.actual != null ? row.actual : null;
+  const live = (m.live && m.live.digits) || {};
+  const t25 = (c.jodi || []).find((r) => r.n === 25);
+  const cell = (v, extra) => {
+    const cls = [v === actual ? "got" : "", top10.has(v) ? "t10" : "", both.has(v) ? "both" : ""].join(" ").trim();
+    return `<td class="num mono ${cls}">${jd(v)}${extra || ""}</td>`;
+  };
+  const stats = (tested, last200, lv) => `<div class="small">
+      <div>5 saal ka test: <b>${pct(tested)}</b> · pichle 200 din ${pct(last200)} · random 25%</div>
+      <div>Live (result se pehle lock): ${lv && lv.n ? `<b>${lv.hits}/${lv.n}</b> (${pct(lv.hits / lv.n, 0)})` : "abhi data nahi"}</div>
+      <div class="muted">₹100 barabar 25 numbers par: ausatan wapas ₹${(tested * rate * 100 / 25).toFixed(0)} (${rate} guna)</div></div>`;
+  const verdict = (hit) => actual == null ? "" : hit ? ' <span class="pill good">HIT</span>' : ' <span class="pill bad">MISS</span>';
+  const gridTable = `<table class="box5"><thead><tr><th class="small">A↓ B→</th>${dg.bahar.map(([b]) => `<th class="num">${b}</th>`).join("")}</tr></thead>
+    <tbody>${dg.andar.map(([a]) => `<tr><th>${a}</th>${dg.bahar.map(([b]) => cell(a * 10 + b)).join("")}</tr>`).join("")}</tbody></table>`;
+  const topTable = `<table class="box5"><tbody>${[0, 1, 2, 3, 4].map((r) => `<tr><th class="small muted">${r * 5 + 1}–${r * 5 + 5}</th>${top25.slice(r * 5, r * 5 + 5).map((v) => cell(v)).join("")}</tr>`).join("")}</tbody></table>`;
+  return `<div class="card">
+    <h2>Grid box: ${esc(m.name)} ${esc(p.date)} — 25-25 numbers</h2>
+    <p class="muted small">Dono box result se pehle lock hui prediction se (hash wali list) hain. <span class="t10-key">Rang</span> = Top-10 me bhi; <span class="both-key">mota</span> = dono box me; result aane par asli number ka khana hara ho jata hai.</p>
+    <div class="boxes">
+      <div class="box"><h3>Andar × Bahar grid${verdict(actual != null && grid.includes(actual))}</h3>${gridTable}
+        ${c.grid ? stats(c.grid.tested, c.grid.tested_200, live.grid_hit) : ""}</div>
+      <div class="box"><h3>Engine ka Top-25 (priority order)${verdict(actual != null && top25.includes(actual))}</h3>${topTable}
+        ${t25 ? stats(t25.tested, t25.tested_200, live.top25_hit) : ""}</div>
+    </div>
+    <p class="muted small">Dono box me common: ${[...both].map(jd).join(" ") || "koi nahi"} (${both.size} numbers). Doosre engine ke box dekhne ke liye upar Engine switch badlo.</p>
   </div>`;
 }
 
@@ -401,7 +426,8 @@ function digitSummary(dg) {
   const card = (k, name) => `<div class="stat"><div class="s">${name}</div>
     <div class="v">${pct(dg[k].hits / dg[k].n)}</div><div class="s">${dg[k].hits}/${dg[k].n} · random ${pct(dg[k].chance, 0)}</div></div>`;
   return `<h3>Andar / Bahar live</h3><div class="grid stats">
-    ${card("andar_hit", "Andar top-5")}${card("bahar_hit", "Bahar top-5")}${card("andar1_hit", "Andar #1 (ek digit)")}${card("bahar1_hit", "Bahar #1 (ek digit)")}</div>`;
+    ${card("andar_hit", "Andar top-5")}${card("bahar_hit", "Bahar top-5")}${card("andar1_hit", "Andar #1 (ek digit)")}${card("bahar1_hit", "Bahar #1 (ek digit)")}
+    ${dg.grid_hit ? card("grid_hit", "Andar×Bahar grid (25)") : ""}${dg.top25_hit ? card("top25_hit", "Top-25 list") : ""}</div>`;
 }
 
 // Predictions locked before the top-5 change stored 3 Andar/Bahar digits.
@@ -674,7 +700,8 @@ function historyTally(rows) {
   const c = (f) => done.filter(f).length;
   const cellOf = (k, chance) => `<td class="num"><b>${k}/${n}</b> <small class="muted">${n ? pct(k / n, 0) : "–"} · random ${pct(chance, 0)}</small></td>`;
   return { n, html: cellOf(c((r) => r.status === "hit"), 0.1) + cellOf(c((r) => r.andar_hit), DIGIT_K / 10)
-    + cellOf(c((r) => r.bahar_hit), DIGIT_K / 10) + cellOf(c((r) => r.andar1_hit), 0.1) + cellOf(c((r) => r.bahar1_hit), 0.1) };
+    + cellOf(c((r) => r.bahar_hit), DIGIT_K / 10) + cellOf(c((r) => r.andar1_hit), 0.1) + cellOf(c((r) => r.bahar1_hit), 0.1)
+    + cellOf(c((r) => r.grid_hit), 0.25) + cellOf(c((r) => r.top25_hit), 0.25) };
 }
 
 function renderHistory() {
@@ -699,6 +726,7 @@ function renderHistory() {
       <td>${status[r.status] || ""}</td>
       <td>${digitCell(r.andar, a, r.andar_hit, r.andar1_hit)}</td>
       <td>${digitCell(r.bahar, b, r.bahar_hit, r.bahar1_hit)}</td>
+      <td class="nowrap">${r.actual == null || r.grid_hit == null ? "–" : `Grid ${tick(r.grid_hit)} · Top-25 ${tick(r.top25_hit)}`}</td>
       <td class="mono small nowrap" title="${esc(r.hash)}">${r.verified ? "✔" : "✘ TAMPERED"} ${esc(r.hash.slice(0, 8))}…</td></tr>`;
   }).join("");
   const sub = isPattern() ? "pattern/" : "";
@@ -707,16 +735,16 @@ function renderHistory() {
     <div class="card"><h2>Prediction history — tool ne jo bhi diya, sab yahan</h2>
       <p class="muted">Har prediction result se <i>pehle</i> lock hoti hai aur kabhi badalti nahi. Result aate hi yahan HIT/MISS lag jata hai. Jodi = Top-10, Andar/Bahar = top-5 digit, #1 = sirf pehla digit.</p>
       <div class="table-wrap"><table>
-        <thead><tr><th>Market</th><th class="num">Jodi Top-10</th><th class="num">Andar top-5</th><th class="num">Bahar top-5</th><th class="num">Andar #1</th><th class="num">Bahar #1</th></tr></thead>
+        <thead><tr><th>Market</th><th class="num">Jodi Top-10</th><th class="num">Andar top-5</th><th class="num">Bahar top-5</th><th class="num">Andar #1</th><th class="num">Bahar #1</th><th class="num">A×B grid (25)</th><th class="num">Top-25</th></tr></thead>
         <tbody>${tallies}</tbody></table></div>
-      <p class="muted small">Gini sirf woh predictions jo result se pehle lock hui aur hash match hua. Random chance: jodi Top-10 10%, top-5 digit 50%, ek digit 10%.</p>
+      <p class="muted small">Gini sirf woh predictions jo result se pehle lock hui aur hash match hua. Random chance: jodi Top-10 10%, top-5 digit 50%, ek digit 10%, 25 numbers wala box 25%.</p>
       ${threeDigitNote(all)}
       <div class="row"><select id="histSel"><option value="all">Saare markets</option>${ms.map((m) => `<option value="${m.key}" ${m.key === sel ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
         <a href="${csv}" download>CSV download (poori history)</a></div>
     </div>
     <div class="card table-wrap"><table>
-      <thead><tr><th>Date</th><th>Market</th><th>Lock time</th><th>Top-10 (locked)</th><th class="num">Result</th><th>Jodi</th><th>Andar (top-5)</th><th>Bahar (top-5)</th><th>Hash</th></tr></thead>
-      <tbody>${body || '<tr><td colspan="9" class="muted">Abhi koi locked prediction nahi.</td></tr>'}</tbody></table></div>`;
+      <thead><tr><th>Date</th><th>Market</th><th>Lock time</th><th>Top-10 (locked)</th><th class="num">Result</th><th>Jodi</th><th>Andar (top-5)</th><th>Bahar (top-5)</th><th>25 wale box</th><th>Hash</th></tr></thead>
+      <tbody>${body || '<tr><td colspan="10" class="muted">Abhi koi locked prediction nahi.</td></tr>'}</tbody></table></div>`;
   $("#histSel").addEventListener("change", (e) => { state.histMarket = e.target.value; renderHistory(); });
 }
 

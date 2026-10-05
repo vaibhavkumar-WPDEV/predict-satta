@@ -217,7 +217,8 @@ def _live(market: str, preds: list[dict], table: dict, pe: PatternEngine, now: d
         row = {"date": p["date"], "created_at": p["created_at"], "late": p.get("late", False),
                "engine": p.get("engine"), "hash": p["hash"], "verified": verify(p),
                "top10": [v for v, _ in p["top10"]], "andar": [x for x, _ in p["andar"]],
-               "bahar": [x for x, _ in p["bahar"]], "locked_digits": len(p["andar"]), "actual": actual}
+               "bahar": [x for x, _ in p["bahar"]], "locked_digits": len(p["andar"]), "actual": actual,
+               "top25": main.top_n(p)}
         if actual is None:
             overdue = now.astimezone(config.IST) > config.result_datetime(market, d) + dt.timedelta(days=2)
             row["status"] = "no-result" if overdue else "pending"
@@ -225,7 +226,7 @@ def _live(market: str, preds: list[dict], table: dict, pe: PatternEngine, now: d
             sc = _score(np.array(p["dist"]), None, None, actual, row["andar"], row["bahar"])
             row.update(status="hit" if sc["hit10"] else "miss", rank=sc["rank"], hit1=sc["hit1"],
                        andar_hit=sc["andar_hit"], bahar_hit=sc["bahar_hit"],
-                       andar1_hit=sc["andar1_hit"], bahar1_hit=sc["bahar1_hit"])
+                       andar1_hit=sc["andar1_hit"], bahar1_hit=sc["bahar1_hit"], **main.grid_scores(row, actual))
             i = pe.st.pos.get((market, d))
             if i is not None and i >= START:
                 row["why"] = _why(pe, i, sc, row["andar"], row["bahar"])
@@ -238,7 +239,8 @@ def _live(market: str, preds: list[dict], table: dict, pe: PatternEngine, now: d
         rows.append(row)
     digits = {key: {"hits": sum(1 for r in counted if r[key]), "n": len(counted), "chance": chance}
               for key, chance in (("andar_hit", DIGIT_K / 10), ("bahar_hit", DIGIT_K / 10),
-                                  ("andar1_hit", 0.1), ("bahar1_hit", 0.1))}
+                                  ("andar1_hit", 0.1), ("bahar1_hit", 0.1),
+                                  ("grid_hit", main.GRID_N / 100), ("top25_hit", main.GRID_N / 100))}
     return {"summary": main._clean(summarize(scores)), "digits": digits, "rows": rows}
 
 

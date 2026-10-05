@@ -84,6 +84,7 @@ def test_pattern_cycle_uses_its_own_files_and_scores_later(data_dir):
     dash = json.loads((data_dir / "pattern" / "dashboard.json").read_text())
     row = [r for r in dash["markets"]["disawar"]["live"]["rows"] if r["date"] == "2026-05-21"][0]
     assert row["status"] == "hit" and row["rank"] == 1 and row["verified"]
+    assert row["top25_hit"] and row["grid_hit"] == (actual // 10 in row["andar"] and actual % 10 in row["bahar"])
     assert dash["kind"] == "pattern" and dash["patterns"]["jodi"] and dash["compare_all"]["n"] > 0
     assert (data_dir / "pattern" / "prediction_history.csv").read_text().startswith("date,market")
     # nothing new and nothing to lock: the fast path only refreshes times

@@ -155,6 +155,14 @@ footer { text-align: center; font-size: 12px; padding: 20px; }
 .hl { color: var(--accent); font-weight: 700; }
 .marks { white-space: nowrap; font-size: 11px; }
 .nowrap { white-space: nowrap; }
+.boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel-2); }
+.box h3 { margin: 0 0 8px; font-size: 15px; }
+table.box5 { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+table.box5 td, table.box5 th { padding: 6px 4px; text-align: center; border: 1px solid var(--line); }
+table.box5 td.t10, .t10-key { color: var(--accent); font-weight: 700; }
+table.box5 td.both, .both-key { font-weight: 800; text-decoration: underline; }
+table.box5 td.got { background: color-mix(in srgb, var(--good) 30%, transparent); outline: 2px solid var(--good); }
 .ok { color: var(--good); font-weight: 700; }
 .no { color: var(--bad); }
 @media (max-width: 600px) {
