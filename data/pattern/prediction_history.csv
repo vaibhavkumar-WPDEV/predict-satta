@@ -1,2 +1,3 @@
 date,market,locked_at,engine,top10,andar_top5,bahar_top5,result,jodi,rank,andar,bahar,andar_#1,bahar_#1,late,hash_ok,hash
-2026-10-05,Ghaziabad,2026-10-05T22:01:04+05:30,P-1.0,80 26 98 70 25 01 94 09 48 61,2 1 9 7 3,0 7 6 1 5,,PENDING,,,,,,yes,yes,4872d5d933bba7dd1865705da1ccd30f47933b1ce87aae3c383994402952e0a0
+2026-10-05,Gali,2026-10-05T22:28:59+05:30,P-1.0,98 80 78 26 70 25 01 09 94 48,2 9 1 7 3,7 6 1 8 5,,PENDING,,,,,,,yes,60fee7c9d59040e7c82f884e4c1e13ddfd287d88de554bbea6e50b2ca9a45d58
+2026-10-05,Ghaziabad,2026-10-05T22:01:04+05:30,P-1.0,80 26 98 70 25 01 94 09 48 61,2 1 9 7 3,0 7 6 1 5,78,MISS,87,HIT,MISS,MISS,MISS,yes,yes,4872d5d933bba7dd1865705da1ccd30f47933b1ce87aae3c383994402952e0a0
