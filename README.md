@@ -192,6 +192,32 @@ Gali 11.5%, chaaron 11.57% (p = 0.000003); engine 3.3 par 10.54% tha. Andar/Baha
 Har MISS ke "kyu?" me ab likha hota hai: number pichle 60 results me aaya tha ya nahi, kitni
 settings ne use pakda, aur agli list ki setting kya hui.
 
+### 4.3 Pattern Engine — upgraded level (alag switch, engine 4.0 par koi asar nahi)
+
+Website par upar **Engine** switch: "Engine 4.0 (abhi wala)" ya "Pattern Engine (upgraded level)"
+(link: `web/?engine=pattern`). Pattern Engine ka code `satta/pattern/`, files `data/pattern/`
+(apni hash-locked predictions, history CSV, dashboard). Watcher me alag step
+(`python -m satta pattern`) — fail ho to bhi engine 4.0 chalta rahe.
+
+- Chaaron markets ek line me (declaration order). Har number ke liye 19 jodi patterns: recency
+  (3 speed), palti, ±1, cut, andar/bahar digit, isi market ka pichla number / palti, **time patterns**
+  (isi weekday 8 hafte, isi tareekh 3 mahine, weekday ke andar/bahar digit 2 saal), 1 saal ki
+  market ginti, 1460 result ki ginti (balancing), gap, aaj pehle aaye market.
+- **Pattern gate:** har refit par har pattern ka score test pichle 2920 results par
+  (t = asli number par pattern ka standardised maan / standard error). |t| > 2 ho tabhi model me.
+- **Model:** conditional logit P(v) ∝ exp(Σ w·z) — Newton se maximum likelihood (ridge L2),
+  walk-forward har 200 draws, live me har naye result ke baad dobara fit. Andar/Bahar ke liye
+  10-pattern digit models (sab patterns, weights data tay karta hai).
+- 5 saal ka sabse bada asar: **balancing** (jo number 4 saal me zyada aaye, woh kam aate hain,
+  t = −7.6; sabse zyada aaye 10 numbers sirf 8.1% aate hain), **gap** (t = −6.8), recency
+  (+4.5), digit recency (+3.6), palti (+3.2). Time patterns (weekday, tareekh) |t| < 1.4 —
+  abhi tak koi asar nahi; gate inhe har refit par dobara test karta hai.
+
+Same 7,739 draws (2021–26, walk-forward), engine 4.0 → Pattern Engine: jodi Top-10 11.5% →
+**11.95%** (p ≈ 1e-8; pichle 2 saal 12.5%; Ghaziabad 13.0%, Gali 12.7%, Faridabad 10.6%,
+Disawar 11.4% jahan 4.0 ka 12.2% behtar hai), Andar top-5 50.7% → **51.8%**, Bahar top-5
+51.3% → **53.1%**.
+
 ### 4.2b Khud ko todo + seekhne ka asar
 
 - **Shuffle test:** engine ko 3 baar aisi history par chalaya jaata hai jisme dates ka order

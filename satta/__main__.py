@@ -10,6 +10,7 @@
   formulas   discovered formulas and their holdout test
   import     fallback: import a CSV (date,market,value)
   verify     check the SHA-256 proof of every locked prediction
+  pattern    Pattern Engine (upgraded level, separate files in data/pattern/)
 """
 
 from __future__ import annotations
@@ -136,6 +137,15 @@ def cmd_import(a):
     print(f"{scraper.import_csv(a.path)} rows imported/updated")
 
 
+def cmd_pattern(a):
+    from .pattern import service as pattern
+
+    out = pattern.cycle(lock_new=not a.no_lock)
+    print(f"Pattern Engine {out['generated_at']}: "
+          + (", ".join(out["new_predictions"]) + " locked" if out["new_predictions"] else "kuch naya lock nahi")
+          + (" (fast path)" if out.get("fast_path") else ""))
+
+
 def cmd_verify(a):
     preds = storage.load_predictions()
     bad = [p for p in preds if not storage.verify_prediction(p)]
@@ -175,6 +185,9 @@ def main(argv=None):
     s.add_argument("path")
     s.set_defaults(fn=cmd_import)
     sub.add_parser("verify").set_defaults(fn=cmd_verify)
+    s = sub.add_parser("pattern")
+    s.add_argument("--no-lock", action="store_true", help="sirf analysis, nayi prediction lock nahi")
+    s.set_defaults(fn=cmd_pattern)
     a = ap.parse_args(argv)
     a.fn(a)
 

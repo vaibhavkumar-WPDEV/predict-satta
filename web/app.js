@@ -1,6 +1,14 @@
 "use strict";
 
-const state = { dash: null, market: null, tab: "today", mode: "server", month: null };
+const state = { dash: null, market: null, tab: "today", mode: "server", month: null, engine: initialEngine() };
+
+// Which engine's data to show: ?engine=pattern in the link, else the viewer's last choice.
+function initialEngine() {
+  const q = new URLSearchParams(location.search).get("engine");
+  if (q === "pattern" || q === "main") return q;
+  try { return localStorage.getItem("engine") === "pattern" ? "pattern" : "main"; } catch (_) { return "main"; }
+}
+const isPattern = () => state.engine === "pattern";
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -10,13 +18,15 @@ const pv = (p) => (p == null ? "" : p < 0.001 ? "p<0.001" : "p=" + p.toFixed(3))
 
 async function load() {
   let dash = null;
+  const engine = state.engine;
+  const sub = engine === "pattern" ? "pattern/" : "";
   try {
-    const r = await fetch("api/dashboard", { cache: "no-store" });
+    const r = await fetch(`api/${sub}dashboard`, { cache: "no-store" });
     if (r.ok) dash = await r.json();
   } catch (_) { /* static mode */ }
   if (!dash) {
     state.mode = "static";
-    for (const url of ["../data/dashboard.json", "data/dashboard.json"]) {
+    for (const url of [`../data/${sub}dashboard.json`, `data/${sub}dashboard.json`]) {
       try {
         // a unique query string skips GitHub Pages' ~10 minute CDN cache
         const r = await fetch(`${url}?t=${Date.now()}`, { cache: "no-store" });
@@ -24,8 +34,11 @@ async function load() {
       } catch (_) { /* try next */ }
     }
   }
+  if (engine !== state.engine) return;  // the viewer switched while this was loading
   if (!dash) {
-    $("#meta").textContent = "Dashboard data nahi mila. Server chalao: python -m satta serve";
+    $("#meta").textContent = engine === "pattern"
+      ? "Pattern Engine ka data abhi nahi bana — watcher ke agle round (10 min) me banega. Tab tak Engine 4.0 dekho."
+      : "Dashboard data nahi mila. Server chalao: python -m satta serve";
     return;
   }
   state.dash = dash;
@@ -33,21 +46,34 @@ async function load() {
   render();
 }
 
+function setEngineUi() {
+  document.body.dataset.engine = state.engine;
+  document.querySelectorAll(".engine-bar button").forEach((b) => b.classList.toggle("active", b.dataset.engine === state.engine));
+}
+
 function render() {
   const d = state.dash;
+  setEngineUi();
   const sync = d.sync || {};
   let syncTxt = "";
   if (sync.error) syncTxt = " · fetch error";
   else if (sync.sources) syncTxt = " · sources: " + sync.sources.map((s) => `${s.source} ${s.values}`).join(", ");
-  $("#meta").textContent = `Updated ${fmtTime(d.generated_at)}${syncTxt}${state.mode === "static" ? " · static mode" : ""}`;
+  $("#meta").textContent = `${isPattern() ? "Pattern Engine " + d.engine + " · " : "Engine " + d.engine + " · "}Updated ${fmtTime(d.generated_at)}${syncTxt}${state.mode === "static" ? " · static mode" : ""}`;
   $("#refresh").style.display = state.mode === "static" ? "none" : "";
   renderMarketBar();
   renderToday();
   renderProof();
   renderTest();
-  renderLearning();
-  renderFormulas();
-  renderTheorems();
+  if (isPattern()) {
+    renderPatterns();
+    const only = (name) => `<div class="card"><h2>${name}</h2><p class="muted">Yeh tab Engine 4.0 ke 30-model ensemble ka hai. Upar switch se "Engine 4.0" chuno. Pattern Engine ke patterns "Learning" tab me hain.</p></div>`;
+    $("#tab-formulas").innerHTML = only("Formule");
+    $("#tab-theorems").innerHTML = only("Theorems");
+  } else {
+    renderLearning();
+    renderFormulas();
+    renderTheorems();
+  }
   renderChart();
   renderHistory();
 }
@@ -176,7 +202,9 @@ function predictionReport(m, p) {
       ${row("CONTRADICTING MODELS", p.contra ? (p.contra.map(esc).join(", ") || "koi bada virodh nahi") : "is purani prediction ke saath record nahi hua")}
       ${row("MONTE CARLO (agle 30 din)", `Top-10 ~${mc.expected} baar sahi (90%: ${mc.lo}–${mc.hi}); random se ~${mc.random.expected} (${mc.random.lo}–${mc.random.hi})`)}
       ${row("MODEL VERSION", `Engine ${esc(p.engine)} (locked ${fmtTime(p.created_at)})${oldNote}`)}
-      ${row("WHAT WOULD CHANGE IT", "Har naya result (kisi bhi market ka) list badal deta hai; har MISS ke baad 12 settings ka HIT record update hota hai aur jo setting pichle ~1 saal me sabse zyada sahi rahi, agli list usi se banti hai.")}
+      ${row("WHAT WOULD CHANGE IT", isPattern()
+        ? "Har naya result (kisi bhi market ka): patterns ka test (t) dobara hota hai, gate badal sakta hai aur weights dobara fit hote hain — agli list usi se banti hai."
+        : "Har naya result (kisi bhi market ka) list badal deta hai; har MISS ke baad 12 settings ka HIT record update hota hai aur jo setting pichle ~1 saal me sabse zyada sahi rahi, agli list usi se banti hai.")}
     </table></div>`;
 }
 
@@ -205,7 +233,7 @@ function renderToday() {
       ${d.sync && d.sync.error ? "<br>Error: " + esc(d.sync.error) : ""}
       ${allFailed ? "<br>Koi bhi result website nahi khuli (internet/firewall check karo). Sources: " + srcs.map((s) => esc(s.source)).join(", ") : ""}</div>`;
   }
-  $("#tab-today").innerHTML = statusStrip(d) + banner + (primary ? predictionCard(primary, true) : "") +
+  $("#tab-today").innerHTML = (isPattern() ? patternIntro(d) : "") + statusStrip(d) + banner + (primary ? predictionCard(primary, true) : "") +
     (primary ? coverageCard(primary) : "") +
     `<div class="grid">${others.map((m) => predictionCard(m, false)).join("")}</div>`;
   const rate = $("#payRate");
@@ -658,7 +686,8 @@ function renderHistory() {
       <td>${digitCell(r.bahar, b, r.bahar_hit, r.bahar1_hit)}</td>
       <td class="mono small nowrap" title="${esc(r.hash)}">${r.verified ? "✔" : "✘ TAMPERED"} ${esc(r.hash.slice(0, 8))}…</td></tr>`;
   }).join("");
-  const csv = state.mode === "server" ? "api/prediction_history.csv" : "../data/prediction_history.csv";
+  const sub = isPattern() ? "pattern/" : "";
+  const csv = state.mode === "server" ? `api/${sub}prediction_history.csv` : `../data/${sub}prediction_history.csv`;
   $("#tab-history").innerHTML = `
     <div class="card"><h2>Prediction history — tool ne jo bhi diya, sab yahan</h2>
       <p class="muted">Har prediction result se <i>pehle</i> lock hoti hai aur kabhi badalti nahi. Result aate hi yahan HIT/MISS lag jata hai. Jodi = Top-10, Andar/Bahar = top-5 digit, #1 = sirf pehla digit.</p>
@@ -676,7 +705,79 @@ function renderHistory() {
   $("#histSel").addEventListener("change", (e) => { state.histMarket = e.target.value; renderHistory(); });
 }
 
+// ---------------------------------------------------------------- pattern engine
+function patternIntro(d) {
+  const c = d.compare_all;
+  if (!c) return "";
+  const row = (k, name) => `<tr><td>${name}</td><td class="num">${pct(c.engine40[k])}</td><td class="num"><b>${pct(c.pattern[k])}</b></td></tr>`;
+  return `<div class="card"><h2>⬆ Upgraded level: Pattern Engine ${esc(d.engine)}</h2>
+    <p class="muted">Engine 4.0 ke saath alag chalta hai — apni locked predictions (SHA-256), apna HIT/MISS record, apni files (data/pattern/). 4.0 par koi asar nahi. Pehle data me pattern pakadta hai (har pattern ka test), sirf asli patterns se prediction banata hai, aur har naye result ke baad dobara seekhta hai. Andar/Bahar ke liye alag digit models.</p>
+    <div class="table-wrap"><table><thead><tr><th>Same ${c.n} draws (2021–26, bina future dekhe)</th><th class="num">Engine 4.0</th><th class="num">Pattern Engine</th></tr></thead>
+      <tbody>${row("top10", "Jodi Top-10 (random 10%)")}${row("andar5", "Andar top-5 (random 50%)")}${row("bahar5", "Bahar top-5 (random 50%)")}</tbody></table></div>
+    <p class="muted small">Patterns aur unka asar: "Learning" tab. Live record (result se pehle lock): "Proof" aur "History" tab.</p></div>`;
+}
+
+const TIME_PATTERNS = new Set(["weekday", "dom", "wk_andar", "wk_bahar", "d_weekday"]);
+
+function patternTable(rows, digit) {
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Pattern</th><th class="num">t (pichle ${state.dash.settings.trail} result)</th><th>Matlab</th><th>Model me?</th><th class="num">Weight</th></tr></thead>
+    <tbody>${rows.slice().sort((a, b) => Math.abs(b.t) - Math.abs(a.t)).map((r) => {
+      const strong = Math.abs(r.t) > state.dash.settings.gate_t;
+      const meaning = !strong ? "koi saaf asar nahi (random jaisa)"
+        : r.t > 0 ? `aise ${digit ? "digit" : "number"} zyada aate hain` : `aise ${digit ? "digit" : "number"} kam aate hain`;
+      return `<tr><td>${esc(r.label)} ${TIME_PATTERNS.has(r.name) ? '<span class="tag-time">time</span>' : ""}</td>
+        <td class="num"><b>${r.t > 0 ? "+" : ""}${r.t.toFixed(2)}</b></td><td>${meaning}</td>
+        <td>${r.used ? '<span class="pill good">haan</span>' : '<span class="pill">nahi</span>'}</td>
+        <td class="num">${r.used ? (r.weight > 0 ? "+" : "") + r.weight.toFixed(3) : "–"}</td></tr>`;
+    }).join("")}</tbody></table></div>`;
+}
+
+function renderPatterns() {
+  const d = state.dash;
+  const m = cur();
+  const st = d.settings || {};
+  const pt = d.patterns || {};
+  const cmpRows = Object.values(d.markets).filter((x) => x.ready && x.compare).map((x) => `<tr><td><b>${esc(x.name)}</b></td>
+      <td class="num">${pct(x.compare.engine40.top10)}</td><td class="num"><b>${pct(x.compare.pattern.top10)}</b></td>
+      <td class="num">${pct(x.compare.engine40.andar5)}</td><td class="num"><b>${pct(x.compare.pattern.andar5)}</b></td>
+      <td class="num">${pct(x.compare.engine40.bahar5)}</td><td class="num"><b>${pct(x.compare.pattern.bahar5)}</b></td></tr>`).join("");
+  const dc = m && m.decision;
+  $("#tab-learning").innerHTML = `
+    <div class="card"><h2>Pattern Engine kaise sochta hai</h2>
+      <ol class="steps">
+        <li><b>Chaaron markets ek line me:</b> Disawar → Faridabad → Ghaziabad → Gali → agle din Disawar… Har result se pehle sirf usse pehle aaye results dekhe jaate hain.</li>
+        <li><b>${st.jodi_patterns} jodi patterns + ${st.digit_patterns} digit patterns</b> har number ke liye: haal me aaya ya nahi (recency), palti, ±1, cut, andar/bahar digit, isi market ka pichla number, <b>time patterns</b> (isi weekday, isi tareekh, weekday ke digit), 1 saal / 4 saal ki ginti (balancing), gap, aaj pehle aaye market.</li>
+        <li><b>Pattern gate:</b> har pattern ka test pichle ${st.trail} results par — asli number par woh pattern ausat se kitna alag tha (t). |t| &gt; ${st.gate_t} ho tabhi jodi model me aata hai. Time patterns bhi isi test se guzarte hain; abhi tak paas nahi hue, par jis din data me dikhenge, khud jud jayenge.</li>
+        <li><b>Model:</b> P(number) ∝ exp(Σ weight × pattern) — weights maximum likelihood se. <b>Har naye result ke baad dobara fit</b> (galti se seekhna: jis pattern ne asli number ko neeche rakha, uska weight badalta hai).</li>
+        <li><b>Andar/Bahar:</b> alag digit models (10 digit patterns), wahi tareeka.</li>
+      </ol></div>
+    <div class="card"><h2>Engine 4.0 vs Pattern Engine — same draws, walk-forward</h2>
+      <div class="table-wrap"><table><thead><tr><th>Market</th><th class="num">4.0 Top-10</th><th class="num">Pattern Top-10</th><th class="num">4.0 Andar-5</th><th class="num">Pattern Andar-5</th><th class="num">4.0 Bahar-5</th><th class="num">Pattern Bahar-5</th></tr></thead>
+      <tbody>${cmpRows}</tbody></table></div>
+      ${dc ? `<p class="muted small">${esc(m.name)}: ${esc(dc.verdict)} (${esc(dc.level)}), pichle ${dc.prob_days} din me Top-10 ${pct(dc.prob)}, poore ${dc.all_n} din ${pct(dc.all_rate)} ${pv(dc.p_value)}.</p>` : ""}
+      <p class="muted small">Random: Top-10 10%, top-5 digit 50%. Pattern Engine ki Andar/Bahar alag digit model se; 4.0 ki jodi list se.</p></div>
+    <div class="card"><h2>Jodi patterns: kaunsa asli hai?</h2>
+      <p class="muted">t = asli number par yeh pattern ausat number se kitna alag tha, standard error me. Random data me t lagbhag 0 hota hai (±2 tak). + = aise number zyada aate hain, − = kam aate hain.</p>
+      ${pt.jodi ? patternTable(pt.jodi, false) : ""}</div>
+    <div class="card"><h2>Andar digit patterns</h2>${pt.andar ? patternTable(pt.andar, true) : ""}</div>
+    <div class="card"><h2>Bahar digit patterns</h2>${pt.bahar ? patternTable(pt.bahar, true) : ""}</div>`;
+}
+
 // ------------------------------------------------------------------- init
+document.querySelectorAll(".engine-bar button").forEach((b) => b.addEventListener("click", () => {
+  if (b.dataset.engine === state.engine) return;
+  state.engine = b.dataset.engine;
+  try { localStorage.setItem("engine", state.engine); } catch (_) { /* private mode */ }
+  const url = new URL(location.href);
+  if (state.engine === "pattern") url.searchParams.set("engine", "pattern"); else url.searchParams.delete("engine");
+  history.replaceState(null, "", url);
+  state.dash = null;
+  setEngineUi();
+  $("#meta").textContent = "loading…";
+  load();
+}));
+
 document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => {
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));

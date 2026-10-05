@@ -61,6 +61,22 @@ body {
   border-bottom: 2px solid transparent; white-space: nowrap; font-size: 14px;
 }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+body[data-engine="pattern"] { --accent: #a371f7; --accent-ink: #ffffff; }
+@media (prefers-color-scheme: light) {
+  body[data-engine="pattern"] { --accent: #8250df; }
+}
+.engine-bar {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding: 10px 20px; background: var(--panel-2); border-bottom: 1px solid var(--line);
+}
+.engine-bar button {
+  border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px;
+  padding: 6px 12px; cursor: pointer; font-size: 14px; font-weight: 600;
+}
+.engine-bar button small { font-weight: 400; color: var(--muted); }
+.engine-bar button.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.engine-bar button.active small { color: inherit; opacity: .85; }
+.tag-time { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; color: var(--muted); }
 .market-bar { display: flex; gap: 8px; padding: 12px 20px 0; flex-wrap: wrap; }
 .market-bar button {
   border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px;

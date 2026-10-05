@@ -20,12 +20,23 @@ _stop = threading.Event()
 _state = {"last_cycle": None, "last_error": None, "running": False}
 
 
+def _run_pattern() -> None:
+    """The Pattern Engine runs after engine 4.0; its failure never touches engine 4.0."""
+    try:
+        from .pattern import service as pattern
+
+        pattern.cycle()
+    except Exception:
+        log.exception("pattern engine failed")
+
+
 def _run_cycle(fetch: bool = True) -> dict:
     _state["running"] = True
     try:
         res = service.cycle(fetch=fetch)
         _state["last_cycle"] = res
         _state["last_error"] = None
+        _run_pattern()
         return res
     except Exception as exc:
         log.exception("cycle failed")
@@ -100,6 +111,22 @@ async def results_csv():
     if not path.exists():
         raise HTTPException(404, "abhi koi result nahi")
     return FileResponse(path, media_type="text/csv", filename="satta-results.csv")
+
+
+@app.get("/api/pattern/dashboard")
+async def pattern_dashboard():
+    path = config.DATA_DIR / "pattern" / "dashboard.json"
+    if not path.exists():
+        raise HTTPException(404, "Pattern Engine abhi chala nahi")
+    return FileResponse(path, media_type="application/json")
+
+
+@app.get("/api/pattern/prediction_history.csv")
+async def pattern_history_csv():
+    path = config.DATA_DIR / "pattern" / "prediction_history.csv"
+    if not path.exists():
+        raise HTTPException(404, "Pattern Engine ki abhi koi locked prediction nahi")
+    return FileResponse(path, media_type="text/csv", filename="pattern-prediction-history.csv")
 
 
 @app.get("/api/prediction_history.csv")
