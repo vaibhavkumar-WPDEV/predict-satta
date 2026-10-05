@@ -256,10 +256,13 @@ def _coverage(rep: Replay) -> dict | None:
         b_ranks.append(rank_of(ab, s.actual % 10))
     a_ranks, b_ranks = np.array(a_ranks), np.array(b_ranks)
     last = ranks[-200:]
+    grid = (a_ranks <= DIGIT_K) & (b_ranks <= DIGIT_K)   # jodi made of Andar top-5 x Bahar top-5
     return {
         "days": len(ranks),
         "jodi": [{"n": n, "tested": _r((ranks <= n).mean()), "tested_200": _r((last <= n).mean()),
-                  "random": n / 100} for n in (1, 5, 10, 20, 30, 40, 50)],
+                  "random": n / 100} for n in (1, 5, 10, 20, 25, 30, 40, 50)],
+        "grid": {"n": DIGIT_K * DIGIT_K, "tested": _r(grid.mean()), "tested_200": _r(grid[-200:].mean()),
+                 "random": DIGIT_K * DIGIT_K / 100},
         "andar": [{"k": k, "tested": _r((a_ranks <= k).mean()), "random": k / 10} for k in (1, 2, 3, 5)],
         "bahar": [{"k": k, "tested": _r((b_ranks <= k).mean()), "random": k / 10} for k in (1, 2, 3, 5)],
     }

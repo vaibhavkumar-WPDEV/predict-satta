@@ -327,6 +327,20 @@ function coverageCard(m) {
       <td class="num"><b>${pct(r.tested)}</b></td><td class="num">${pct(r.random, 0)}</td>
       <td class="num">₹${(r.tested * 9 * 100 / r.k).toFixed(0)}</td></tr>`;
   }).join("");
+  const dg = digitsOf(p);
+  const top10 = new Set(p.top10.map(([v]) => v));
+  const g = c.grid;
+  const gridHtml = g ? `
+    <h3>Andar × Bahar jodi grid (${g.n} numbers)</h3>
+    <p class="muted small">Andar top-5 (line) × Bahar top-5 (column). <span class="hl">Rang wale</span> number Top-10 me bhi hain.
+      Asli test: ${c.days} din me asli number is grid me <b>${pct(g.tested)}</b> baar aaya (pichle 200 din ${pct(g.tested_200)}), random ${pct(g.random, 0)}.
+      ₹100 barabar baantne par ausatan wapas ₹${(g.tested * rate * 100 / g.n).toFixed(0)} (${rate} guna).</p>
+    <div class="table-wrap"><table class="grid5">
+      <thead><tr><th class="small">Andar ↓ · Bahar →</th>${dg.bahar.map(([b]) => `<th class="num">${b}</th>`).join("")}</tr></thead>
+      <tbody>${dg.andar.map(([a]) => `<tr><th>${a}</th>${dg.bahar.map(([b]) => {
+        const v = a * 10 + b;
+        return `<td class="num mono">${top10.has(v) ? `<span class="hl">${jd(v)}</span>` : jd(v)}</td>`;
+      }).join("")}</tr>`).join("")}</tbody></table></div>` : "";
   return `
   <div class="card">
     <h2>Percentage kaise badhe? Jitne zyada numbers, utna zyada chance</h2>
@@ -341,6 +355,7 @@ function coverageCard(m) {
     <div class="table-wrap"><table>
       <thead><tr><th></th><th>Digits</th><th class="num">Asli test</th><th class="num">Random</th><th class="num">₹100 par ausatan wapas<br><small class="muted">(9 guna rate)</small></th></tr></thead>
       <tbody>${digitRows(at, c.andar, "Andar")}${digitRows(ab, c.bahar, "Bahar")}</tbody></table></div>
+    ${gridHtml}
     <p class="muted" style="font-size:12px">Hisaab: N numbers par ₹100 barabar baantne se har number par ₹100/N lagta hai; asli number list me aaya to ₹100/N × rate milta hai. Ausatan wapas = asli test % × rate × 100 / N. Random picking me yeh hamesha ₹${rate} hota hai, chahe N kitna bhi ho.</p>
   </div>`;
 }

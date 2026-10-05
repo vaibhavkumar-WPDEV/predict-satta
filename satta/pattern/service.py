@@ -196,10 +196,13 @@ def _decision(hits: np.ndarray) -> dict | None:
 
 def _coverage(ranks: np.ndarray, a_ranks: np.ndarray, b_ranks: np.ndarray) -> dict:
     last = ranks[-200:]
+    grid = (a_ranks <= DIGIT_K) & (b_ranks <= DIGIT_K)   # jodi made of Andar top-5 x Bahar top-5
     return {
         "days": len(ranks),
         "jodi": [{"n": n, "tested": main._r((ranks <= n).mean()), "tested_200": main._r((last <= n).mean()),
-                  "random": n / 100} for n in (1, 5, 10, 20, 30, 40, 50)],
+                  "random": n / 100} for n in (1, 5, 10, 20, 25, 30, 40, 50)],
+        "grid": {"n": DIGIT_K * DIGIT_K, "tested": main._r(grid.mean()), "tested_200": main._r(grid[-200:].mean()),
+                 "random": DIGIT_K * DIGIT_K / 100},
         "andar": [{"k": k, "tested": main._r((a_ranks <= k).mean()), "random": k / 10} for k in (1, 2, 3, 5)],
         "bahar": [{"k": k, "tested": main._r((b_ranks <= k).mean()), "random": k / 10} for k in (1, 2, 3, 5)],
     }
