@@ -53,13 +53,14 @@ jobs:
             python -m satta cycle || echo "cycle failed, retrying next round"
             # upgraded level, separate files (data/pattern/); a failure here never stops engine 4.0
             python -m satta pattern || echo "pattern engine failed, engine 4.0 unaffected"
+            python -m satta engine5 || echo "engine 5 failed, the other engines unaffected"
             git add -A data/
             # commit on a new result, a new locked prediction or a new full
             # re-fetch; the first round after a code push also publishes the
             # recomputed dashboard
             if [ "$first" = 1 ] && [ "$EVENT" = "push" ]; then
               publish=1
-            elif git diff --cached --quiet -- data/results.csv data/predictions.jsonl data/sync_state.json data/pattern/predictions.jsonl; then
+            elif git diff --cached --quiet -- data/results.csv data/predictions.jsonl data/sync_state.json data/pattern/predictions.jsonl data/engine5/predictions.jsonl; then
               publish=0
             else
               publish=1

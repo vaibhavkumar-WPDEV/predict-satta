@@ -1,8 +1,9 @@
-"""Pattern Engine: the upgraded level, running beside engine 4.0 with its own files.
+"""Pattern Engine and Engine 5: the upgraded levels, running beside engine 4.0 with their own files.
 
-It never writes engine 4.0's files (data/predictions.jsonl, data/dashboard.json); it only
-reads the shared results. Its own locked predictions, history and dashboard live in
-data/pattern/. A failure here cannot stop engine 4.0 (separate step in the watcher).
+They never write engine 4.0's files (data/predictions.jsonl, data/dashboard.json); they only
+read the shared results. Each keeps its own locked predictions, history and dashboard
+(data/pattern/, data/engine5/). A failure here cannot stop engine 4.0 (separate watcher steps).
 """
 
 ENGINE = "P-1.0"
+ENGINE5 = "5.0"

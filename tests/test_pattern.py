@@ -90,3 +90,32 @@ def test_pattern_cycle_uses_its_own_files_and_scores_later(data_dir):
     # nothing new and nothing to lock: the fast path only refreshes times
     assert P.cycle(now=at(2026, 5, 21, 7)).get("fast_path") is True
     assert storage.load_predictions() == []
+
+
+def test_transition_tables_use_only_earlier_draws():
+    st = E.Stream(planted_table(days=60))
+    i = 150
+    built = E.Transitions.upto(st, i)
+    ps, pm = E.Transitions.previous(st, i, st.markets[i])
+    assert ps == st.vals[i - 1]
+    total = built.stream.sum() - 0.5 * 100 * 100
+    assert total == i - 1                               # one stream jump per earlier draw
+    f = built.jodi(ps, pm, st.markets[i])
+    assert f.shape == (100, len(E.TRANS_JODI)) and np.isfinite(f).all()
+
+
+def test_engine5_has_its_own_files_and_a_full_report(data_dir):
+    write_results(data_dir / "results.csv", synthetic_rows(140))
+    out = P.cycle(now=at(2026, 5, 21, 1), fl=P.ENGINE_5)
+    assert out["new_predictions"] == ["disawar 2026-05-21"]
+    assert not (data_dir / "pattern" / "predictions.jsonl").exists()   # P-1.0's file untouched
+    p = P.load_predictions(P.ENGINE_5)[0]
+    assert p["engine"] == "5.0" and P.verify(p)
+    dash = json.loads((data_dir / "engine5" / "dashboard.json").read_text())
+    assert dash["kind"] == "engine5" and dash["upgrades"]
+    rep = dash["markets"]["disawar"]["report"]
+    assert [c["number"] for c in rep["top"]] == [v for v, _ in p["top10"]]
+    assert rep["top"][0]["score"] == 100 and all(0 <= c["score"] <= 100 for c in rep["top"])
+    for key in ("strongest", "hidden", "gap", "momentum", "reverse", "contrarian", "rejected", "uncertainty", "changed"):
+        assert key in rep
+    assert sum(b["hits"] for b in dash["calibration"]["buckets"]) == dash["calibration"]["draws"]

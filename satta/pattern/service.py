@@ -22,15 +22,31 @@ from ..engine import recency
 from ..engine.base import SeriesData, andar_bahar
 from ..engine.ensemble import DIGIT_K, rank_of, summarize
 from ..engine.stats import binom_sf
-from . import ENGINE
-from .engine import DIGIT, GATE_T, JODI, LABELS, REFIT, START, TRAIL, PatternEngine
+from dataclasses import dataclass
+
+from . import ENGINE, ENGINE5
+from .engine import DIGIT, GATE_T, LABELS, REFIT, START, TRAIL, PatternEngine
+from .report import UPGRADES, engine5_report, rank_calibration
 
 log = logging.getLogger("satta.pattern")
 _SRC = Path(__file__).parent
 
 
-def pattern_dir() -> Path:
-    d = config.DATA_DIR / "pattern"
+@dataclass(frozen=True)
+class Flavor:
+    """Which upgraded engine: its data folder / dashboard kind, its label, its patterns."""
+    kind: str
+    engine: str
+    transitions: bool
+
+
+PATTERN = Flavor("pattern", ENGINE, False)
+ENGINE_5 = Flavor("engine5", ENGINE5, True)
+FLAVORS = {f.kind: f for f in (PATTERN, ENGINE_5)}
+
+
+def pattern_dir(fl: Flavor = PATTERN) -> Path:
+    d = config.DATA_DIR / fl.kind
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -57,15 +73,15 @@ def verify(pred: dict) -> bool:
     return pred.get("hash") == pattern_hash(pred)
 
 
-def load_predictions() -> list[dict]:
-    path = pattern_dir() / "predictions.jsonl"
+def load_predictions(fl: Flavor = PATTERN) -> list[dict]:
+    path = pattern_dir(fl) / "predictions.jsonl"
     if not path.exists():
         return []
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def append_prediction(pred: dict) -> None:
-    with open(pattern_dir() / "predictions.jsonl", "a", encoding="utf-8") as fh:
+def append_prediction(pred: dict, fl: Flavor = PATTERN) -> None:
+    with open(pattern_dir(fl) / "predictions.jsonl", "a", encoding="utf-8") as fh:
         fh.write(json.dumps(pred, ensure_ascii=False) + "\n")
 
 
@@ -78,7 +94,8 @@ def _digits(p: np.ndarray, k: int = DIGIT_K) -> list[int]:
     return [int(d) for d in np.argsort(-p, kind="stable")[:k]]
 
 
-def make_prediction(pe: PatternEngine, sd: SeriesData, date: dt.date, now: dt.datetime) -> dict:
+def make_prediction(pe: PatternEngine, sd: SeriesData, date: dt.date, now: dt.datetime,
+                    fl: Flavor = PATTERN) -> dict:
     nx = pe.next(sd.market, date)
     rt = config.result_datetime(sd.market, date)
     used = sorted(nx["jodi_used"].items(), key=lambda x: -abs(x[1]))
@@ -88,7 +105,7 @@ def make_prediction(pe: PatternEngine, sd: SeriesData, date: dt.date, now: dt.da
         "created_at": now.astimezone(config.IST).isoformat(timespec="seconds"),
         "result_time": rt.isoformat(timespec="minutes"),
         "late": now > rt,
-        "engine": ENGINE,
+        "engine": fl.engine,
         "trained_on": int(nx["position"]),
         "last_result": sd.dates[-1].isoformat() if sd.n else None,
         "top10": _top(nx["jodi"], 10),
@@ -97,7 +114,7 @@ def make_prediction(pe: PatternEngine, sd: SeriesData, date: dt.date, now: dt.da
         "dist": [round(float(x), 5) for x in nx["jodi"]],
         "patterns": dict(used),
         "digit_patterns": {"andar": nx["andar_used"], "bahar": nx["bahar_used"]},
-        "model": "Pattern Engine: " + ", ".join(LABELS.get(n, n) for n, _ in used[:3]),
+        "model": ("Engine 5: " if fl.transitions else "Pattern Engine: ") + ", ".join(LABELS.get(n, n) for n, _ in used[:3]),
         "support": [f"{LABELS.get(n, n)} ({w:+.3f})" for n, w in used],
         "contra": [],
     }
@@ -268,7 +285,7 @@ def _compare(pe: PatternEngine, rec: recency.Recency, positions: list[int], cach
             "p_pattern": main._r(binom_sf(int(jp), len(positions), 0.1), 6) if positions else None}
 
 
-def _analyse(table, market, preds, now, lock_new, pe, rec, closed, cache):
+def _analyse(table, market, preds, now, lock_new, pe, rec, closed, cache, fl=PATTERN, calib=None):
     sd = SeriesData(table, market)
     meta = config.MARKETS[market]
     base = {"key": market, "name": meta["name"], "short": meta["short"], "result_time": meta["result_time"],
@@ -283,7 +300,7 @@ def _analyse(table, market, preds, now, lock_new, pe, rec, closed, cache):
     ready, waiting, deadline = main.lock_status(table, sd, target, now, closed)
     new = None
     if locked is None and lock_new and ready:
-        new = locked = make_prediction(pe, sd, target, now)
+        new = locked = make_prediction(pe, sd, target, now, fl)
     wait_info = None
     if locked is None:
         wait_info = {"date": target.isoformat(), "deadline": deadline.isoformat(timespec="minutes"),
@@ -314,6 +331,8 @@ def _analyse(table, market, preds, now, lock_new, pe, rec, closed, cache):
                "arrival": main._arrival(market, storage.load_result_rows()),
                "compare": _compare(pe, rec, positions, cache),
                "live": None}
+    if fl.transitions and locked is not None and calib is not None:
+        payload["report"] = engine5_report(pe, market, target, locked, calib)
     return payload, new
 
 
@@ -330,13 +349,13 @@ def _nothing_to_lock(table: dict, preds: list[dict], now: dt.datetime) -> bool:
     return True
 
 
-def cycle(now: dt.datetime | None = None, lock_new: bool = True) -> dict:
-    """One run of the Pattern Engine on the results already in data/results.csv."""
+def cycle(now: dt.datetime | None = None, lock_new: bool = True, fl: Flavor = PATTERN) -> dict:
+    """One run of the Pattern Engine (or Engine 5) on the results already in data/results.csv."""
     now = now or config.now_ist()
     table = storage.load_table()
-    preds = load_predictions()
+    preds = load_predictions(fl)
     thash = main.table_hash(table)
-    out_path = pattern_dir() / "dashboard.json"
+    out_path = pattern_dir(fl) / "dashboard.json"
     prev = json.loads(out_path.read_text(encoding="utf-8")) if out_path.exists() else {}
     if (prev.get("data_hash") == thash and prev.get("code_hash") == CODE_HASH
             and _nothing_to_lock(table, preds, now)):
@@ -348,15 +367,16 @@ def cycle(now: dt.datetime | None = None, lock_new: bool = True) -> dict:
         prev["generated_at"] = now.astimezone(config.IST).isoformat(timespec="seconds")
         out_path.write_text(json.dumps(prev, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         return {"generated_at": prev["generated_at"], "fast_path": True, "new_predictions": []}
-    pe = PatternEngine(table)
+    pe = PatternEngine(table, transitions=fl.transitions)
+    calib = rank_calibration(pe) if fl.transitions else None
     rec = recency.Recency(table)
     closed = main.closed_map(table)
     now_used = pe.next(config.MARKET_KEYS[0], now.date() + dt.timedelta(days=1))["jodi_used"]
     markets, created, cache = {}, [], {}
     for m in config.MARKET_KEYS:
-        payload, new = _analyse(table, m, preds, now, lock_new, pe, rec, closed, cache)
+        payload, new = _analyse(table, m, preds, now, lock_new, pe, rec, closed, cache, fl, calib)
         if new is not None:
-            append_prediction(new)
+            append_prediction(new, fl)
             preds.append(new)
             created.append(f"{m} {new['date']}")
         markets[m] = payload
@@ -367,15 +387,17 @@ def cycle(now: dt.datetime | None = None, lock_new: bool = True) -> dict:
     allpos = [i for i in range(START, len(pe.st))]
     dash = {
         "generated_at": now.astimezone(config.IST).isoformat(timespec="seconds"),
-        "engine": ENGINE, "kind": "pattern", "data_hash": thash, "code_hash": CODE_HASH,
+        "engine": fl.engine, "kind": fl.kind, "data_hash": thash, "code_hash": CODE_HASH,
         "primary": config.PRIMARY_MARKET, "history_start": config.HISTORY_START.isoformat(),
         "settings": {"gate_t": GATE_T, "trail": TRAIL, "refit": REFIT, "start": START,
-                     "jodi_patterns": len(JODI), "digit_patterns": len(DIGIT)},
+                     "jodi_patterns": len(pe.jodi_names), "digit_patterns": len(DIGIT)},
+        "upgrades": UPGRADES if fl.transitions else [],
+        "calibration": calib,
         "patterns": scan,
         "compare_all": _compare(pe, rec, allpos, cache),
         "markets": markets,
         "results": main.results_table(table),
     }
     out_path.write_text(json.dumps(main._clean(dash), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    (pattern_dir() / "prediction_history.csv").write_text(main.prediction_history(markets), encoding="utf-8")
+    (pattern_dir(fl) / "prediction_history.csv").write_text(main.prediction_history(markets), encoding="utf-8")
     return {"generated_at": dash["generated_at"], "new_predictions": created}

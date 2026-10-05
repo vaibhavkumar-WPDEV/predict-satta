@@ -11,6 +11,7 @@
   import     fallback: import a CSV (date,market,value)
   verify     check the SHA-256 proof of every locked prediction
   pattern    Pattern Engine (upgraded level, separate files in data/pattern/)
+  engine5    Engine 5 (Pattern Engine + transition patterns, separate files in data/engine5/)
 """
 
 from __future__ import annotations
@@ -140,8 +141,9 @@ def cmd_import(a):
 def cmd_pattern(a):
     from .pattern import service as pattern
 
-    out = pattern.cycle(lock_new=not a.no_lock)
-    print(f"Pattern Engine {out['generated_at']}: "
+    fl = pattern.FLAVORS[a.kind]
+    out = pattern.cycle(lock_new=not a.no_lock, fl=fl)
+    print(f"{'Engine 5' if fl.transitions else 'Pattern Engine'} {out['generated_at']}: "
           + (", ".join(out["new_predictions"]) + " locked" if out["new_predictions"] else "kuch naya lock nahi")
           + (" (fast path)" if out.get("fast_path") else ""))
 
@@ -185,9 +187,10 @@ def main(argv=None):
     s.add_argument("path")
     s.set_defaults(fn=cmd_import)
     sub.add_parser("verify").set_defaults(fn=cmd_verify)
-    s = sub.add_parser("pattern")
-    s.add_argument("--no-lock", action="store_true", help="sirf analysis, nayi prediction lock nahi")
-    s.set_defaults(fn=cmd_pattern)
+    for kind in ("pattern", "engine5"):
+        s = sub.add_parser(kind)
+        s.add_argument("--no-lock", action="store_true", help="sirf analysis, nayi prediction lock nahi")
+        s.set_defaults(fn=cmd_pattern, kind=kind)
     a = ap.parse_args(argv)
     a.fn(a)
 

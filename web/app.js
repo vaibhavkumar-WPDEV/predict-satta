@@ -5,10 +5,14 @@ const state = { dash: null, market: null, tab: "today", mode: "server", month: n
 // Which engine's data to show: ?engine=pattern in the link, else the viewer's last choice.
 function initialEngine() {
   const q = new URLSearchParams(location.search).get("engine");
-  if (q === "pattern" || q === "main") return q;
-  try { return localStorage.getItem("engine") === "pattern" ? "pattern" : "main"; } catch (_) { return "main"; }
+  const ok = ["main", "pattern", "engine5"];
+  if (ok.includes(q)) return q;
+  try { const s = localStorage.getItem("engine"); return ok.includes(s) ? s : "main"; } catch (_) { return "main"; }
 }
-const isPattern = () => state.engine === "pattern";
+// both upgraded engines share the pattern views; Engine 5 adds its analysis report
+const isPattern = () => state.engine !== "main";
+const isE5 = () => state.engine === "engine5";
+const engineName = () => ({ main: "Engine 4.0", pattern: "Pattern Engine", engine5: "Engine 5" }[state.engine]);
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -19,7 +23,7 @@ const pv = (p) => (p == null ? "" : p < 0.001 ? "p<0.001" : "p=" + p.toFixed(3))
 async function load() {
   let dash = null;
   const engine = state.engine;
-  const sub = engine === "pattern" ? "pattern/" : "";
+  const sub = engine === "main" ? "" : engine + "/";
   try {
     const r = await fetch(`api/${sub}dashboard`, { cache: "no-store" });
     if (r.ok) dash = await r.json();
@@ -36,8 +40,8 @@ async function load() {
   }
   if (engine !== state.engine) return;  // the viewer switched while this was loading
   if (!dash) {
-    $("#meta").textContent = engine === "pattern"
-      ? "Pattern Engine ka data abhi nahi bana — watcher ke agle round (10 min) me banega. Tab tak Engine 4.0 dekho."
+    $("#meta").textContent = engine !== "main"
+      ? `${engineName()} ka data abhi nahi bana — watcher ke agle round (10 min) me banega. Tab tak Engine 4.0 dekho.`
       : "Dashboard data nahi mila. Server chalao: python -m satta serve";
     return;
   }
@@ -58,7 +62,7 @@ function render() {
   let syncTxt = "";
   if (sync.error) syncTxt = " · fetch error";
   else if (sync.sources) syncTxt = " · sources: " + sync.sources.map((s) => `${s.source} ${s.values}`).join(", ");
-  $("#meta").textContent = `${isPattern() ? "Pattern Engine " + d.engine + " · " : "Engine " + d.engine + " · "}Updated ${fmtTime(d.generated_at)}${syncTxt}${state.mode === "static" ? " · static mode" : ""}`;
+  $("#meta").textContent = `${isE5() ? "Engine " + d.engine + " · " : isPattern() ? "Pattern Engine " + d.engine + " · " : "Engine " + d.engine + " · "}Updated ${fmtTime(d.generated_at)}${syncTxt}${state.mode === "static" ? " · static mode" : ""}`;
   $("#refresh").style.display = state.mode === "static" ? "none" : "";
   renderMarketBar();
   renderToday();
@@ -234,6 +238,7 @@ function renderToday() {
       ${allFailed ? "<br>Koi bhi result website nahi khuli (internet/firewall check karo). Sources: " + srcs.map((s) => esc(s.source)).join(", ") : ""}</div>`;
   }
   $("#tab-today").innerHTML = (isPattern() ? patternIntro(d) : "") + statusStrip(d) + banner + (primary ? predictionCard(primary, true) : "") +
+    (isE5() && primary ? e5Report(primary) : "") +
     (primary ? gridBox(primary) : "") + (primary ? coverageCard(primary) : "") +
     `<div class="grid">${others.map((m) => predictionCard(m, false)).join("")}</div>`;
   const rate = $("#payRate");
@@ -729,7 +734,7 @@ function renderHistory() {
       <td class="nowrap">${r.actual == null || r.grid_hit == null ? "–" : `Grid ${tick(r.grid_hit)} · Top-25 ${tick(r.top25_hit)}`}</td>
       <td class="mono small nowrap" title="${esc(r.hash)}">${r.verified ? "✔" : "✘ TAMPERED"} ${esc(r.hash.slice(0, 8))}…</td></tr>`;
   }).join("");
-  const sub = isPattern() ? "pattern/" : "";
+  const sub = state.engine === "main" ? "" : state.engine + "/";
   const csv = state.mode === "server" ? `api/${sub}prediction_history.csv` : `../data/${sub}prediction_history.csv`;
   $("#tab-history").innerHTML = `
     <div class="card"><h2>Prediction history — tool ne jo bhi diya, sab yahan</h2>
@@ -753,9 +758,11 @@ function patternIntro(d) {
   const c = d.compare_all;
   if (!c) return "";
   const row = (k, name) => `<tr><td>${name}</td><td class="num">${pct(c.engine40[k])}</td><td class="num"><b>${pct(c.pattern[k])}</b></td></tr>`;
-  return `<div class="card"><h2>⬆ Upgraded level: Pattern Engine ${esc(d.engine)}</h2>
-    <p class="muted">Engine 4.0 ke saath alag chalta hai — apni locked predictions (SHA-256), apna HIT/MISS record, apni files (data/pattern/). 4.0 par koi asar nahi. Pehle data me pattern pakadta hai (har pattern ka test), sirf asli patterns se prediction banata hai, aur har naye result ke baad dobara seekhta hai. Andar/Bahar ke liye alag digit models.</p>
-    <div class="table-wrap"><table><thead><tr><th>Same ${c.n} draws (2021–26, bina future dekhe)</th><th class="num">Engine 4.0</th><th class="num">Pattern Engine</th></tr></thead>
+  return `<div class="card"><h2>${isE5() ? "⬆⬆ Engine " + esc(d.engine) + ": Pattern Engine + transitions" : "⬆ Upgraded level: Pattern Engine " + esc(d.engine)}</h2>
+    <p class="muted">${isE5()
+      ? "Engine 4.0 aur Pattern Engine ke saath alag chalta hai — apni locked predictions (SHA-256), apna HIT/MISS record, apni files (data/engine5/). Pattern Engine ke saare patterns + naya transition pattern (koi market X dene ke baad, X ke baad pehle aa chuke number kam dohrata hai — 5 saal me sabit). Har prediction ke saath poori ENGINE 5 analysis: score 0-100, maapi hui probability, saath/virodh wale patterns, hidden / gap / momentum / reverse / contrarian / rejected numbers."
+      : "Engine 4.0 ke saath alag chalta hai — apni locked predictions (SHA-256), apna HIT/MISS record, apni files (data/pattern/). 4.0 par koi asar nahi. Pehle data me pattern pakadta hai (har pattern ka test), sirf asli patterns se prediction banata hai, aur har naye result ke baad dobara seekhta hai. Andar/Bahar ke liye alag digit models."}</p>
+    <div class="table-wrap"><table><thead><tr><th>Same ${c.n} draws (2021–26, bina future dekhe)</th><th class="num">Engine 4.0</th><th class="num">${esc(engineName())}</th></tr></thead>
       <tbody>${row("top10", "Jodi Top-10 (random 10%)")}${row("andar5", "Andar top-5 (random 50%)")}${row("bahar5", "Bahar top-5 (random 50%)")}</tbody></table></div>
     <p class="muted small">Patterns aur unka asar: "Learning" tab. Live record (result se pehle lock): "Proof" aur "History" tab.</p></div>`;
 }
@@ -786,17 +793,18 @@ function renderPatterns() {
       <td class="num">${pct(x.compare.engine40.andar5)}</td><td class="num"><b>${pct(x.compare.pattern.andar5)}</b></td>
       <td class="num">${pct(x.compare.engine40.bahar5)}</td><td class="num"><b>${pct(x.compare.pattern.bahar5)}</b></td></tr>`).join("");
   const dc = m && m.decision;
+  const short = isE5() ? "E5" : "Pattern";
   $("#tab-learning").innerHTML = `
-    <div class="card"><h2>Pattern Engine kaise sochta hai</h2>
+    <div class="card"><h2>${esc(engineName())} kaise sochta hai</h2>
       <ol class="steps">
         <li><b>Chaaron markets ek line me:</b> Disawar → Faridabad → Ghaziabad → Gali → agle din Disawar… Har result se pehle sirf usse pehle aaye results dekhe jaate hain.</li>
-        <li><b>${st.jodi_patterns} jodi patterns + ${st.digit_patterns} digit patterns</b> har number ke liye: haal me aaya ya nahi (recency), palti, ±1, cut, andar/bahar digit, isi market ka pichla number, <b>time patterns</b> (isi weekday, isi tareekh, weekday ke digit), 1 saal / 4 saal ki ginti (balancing), gap, aaj pehle aaye market.</li>
+        <li><b>${st.jodi_patterns} jodi patterns + ${st.digit_patterns} digit patterns</b> har number ke liye: haal me aaya ya nahi (recency), palti, ±1, cut, andar/bahar digit, isi market ka pichla number, <b>time patterns</b> (isi weekday, isi tareekh, weekday ke digit), 1 saal / 4 saal ki ginti (balancing), gap, aaj pehle aaye market${isE5() ? ", aur <b>transitions</b> (isi market me pichle number ke baad yeh jump pehle hua ya nahi, koi bhi market ka pichla number, digit → digit)" : ""}.</li>
         <li><b>Pattern gate:</b> har pattern ka test pichle ${st.trail} results par — asli number par woh pattern ausat se kitna alag tha (t). |t| &gt; ${st.gate_t} ho tabhi jodi model me aata hai. Time patterns bhi isi test se guzarte hain; abhi tak paas nahi hue, par jis din data me dikhenge, khud jud jayenge.</li>
         <li><b>Model:</b> P(number) ∝ exp(Σ weight × pattern) — weights maximum likelihood se. <b>Har naye result ke baad dobara fit</b> (galti se seekhna: jis pattern ne asli number ko neeche rakha, uska weight badalta hai).</li>
         <li><b>Andar/Bahar:</b> alag digit models (10 digit patterns), wahi tareeka.</li>
       </ol></div>
-    <div class="card"><h2>Engine 4.0 vs Pattern Engine — same draws, walk-forward</h2>
-      <div class="table-wrap"><table><thead><tr><th>Market</th><th class="num">4.0 Top-10</th><th class="num">Pattern Top-10</th><th class="num">4.0 Andar-5</th><th class="num">Pattern Andar-5</th><th class="num">4.0 Bahar-5</th><th class="num">Pattern Bahar-5</th></tr></thead>
+    <div class="card"><h2>Engine 4.0 vs ${esc(engineName())} — same draws, walk-forward</h2>
+      <div class="table-wrap"><table><thead><tr><th>Market</th><th class="num">4.0 Top-10</th><th class="num">${short} Top-10</th><th class="num">4.0 Andar-5</th><th class="num">${short} Andar-5</th><th class="num">4.0 Bahar-5</th><th class="num">${short} Bahar-5</th></tr></thead>
       <tbody>${cmpRows}</tbody></table></div>
       ${dc ? `<p class="muted small">${esc(m.name)}: ${esc(dc.verdict)} (${esc(dc.level)}), pichle ${dc.prob_days} din me Top-10 ${pct(dc.prob)}, poore ${dc.all_n} din ${pct(dc.all_rate)} ${pv(dc.p_value)}.</p>` : ""}
       <p class="muted small">Random: Top-10 10%, top-5 digit 50%. Pattern Engine ki Andar/Bahar alag digit model se; 4.0 ki jodi list se.</p></div>
@@ -804,7 +812,45 @@ function renderPatterns() {
       <p class="muted">t = asli number par yeh pattern ausat number se kitna alag tha, standard error me. Random data me t lagbhag 0 hota hai (±2 tak). + = aise number zyada aate hain, − = kam aate hain.</p>
       ${pt.jodi ? patternTable(pt.jodi, false) : ""}</div>
     <div class="card"><h2>Andar digit patterns</h2>${pt.andar ? patternTable(pt.andar, true) : ""}</div>
-    <div class="card"><h2>Bahar digit patterns</h2>${pt.bahar ? patternTable(pt.bahar, true) : ""}</div>`;
+    <div class="card"><h2>Bahar digit patterns</h2>${pt.bahar ? patternTable(pt.bahar, true) : ""}</div>
+    ${upgradeLog(d)}`;
+}
+
+// ENGINE 5 FINAL ANALYSIS for the selected market's locked prediction.
+function e5Report(m) {
+  const r = m.report;
+  if (!r) return "";
+  const n2 = (v) => `<b class="mono">${jd(v)}</b>`;
+  const top = r.top.map((c) => `<tr><td class="num">${c.rank}</td><td class="num">${n2(c.number)}</td>
+      <td class="num">${c.score}/100</td><td class="num">${c.prob.toFixed(2)}%</td><td>${esc(c.confidence)}</td>
+      <td class="small">${c.evidence.map(esc).join("; ") || "–"}${c.against.length ? `<br><span class="muted">virodh: ${c.against.map(esc).join("; ")}</span>` : ""}</td></tr>`).join("");
+  const li = (items, f) => items && items.length ? `<ul>${items.map((x) => `<li>${f(x)}</li>`).join("")}</ul>` : '<p class="muted small">koi nahi</p>';
+  return `<div class="card"><h2>ENGINE 5 FINAL ANALYSIS — ${esc(m.name)} ${esc(r.date)}</h2>
+    <p class="muted small">Ranking wahi hai jo result se pehle lock hui. Score 0–100 = model ki apni tulna (probability nahi). "Probability" = 5 saal ke walk-forward test me is rank wale number kitni baar aaye (random 1%). Confidence kabhi "High" nahi — kisi ek number ke liye data itna pakka saboot nahi deta.</p>
+    <h3>Top candidates</h3>
+    <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th class="num">Number</th><th class="num">Model score</th><th class="num">Est. probability</th><th>Confidence</th><th>Main evidence / virodh</th></tr></thead><tbody>${top}</tbody></table></div>
+    <h3>🔥 Strongest candidate: ${n2(r.strongest.number)}</h3><p>${esc(r.strongest.why)} Maapi hui probability ${r.strongest.prob.toFixed(2)}%.</p>
+    <div class="e5-sections">
+      <div class="box"><h3>🧠 Hidden candidates</h3>${li(r.hidden, (c) => `${n2(c.number)} rank ${c.rank} · ${c.support} patterns saath · ${esc(c.note)}`)}</div>
+      <div class="box"><h3>🕳 Gap candidates</h3>${li(r.gap, (c) => `${n2(c.number)} ${c.gap} result se nahi aaya (apna ausat gap ${c.avg_gap}) · Engine 5 rank ${c.rank}`)}
+        <p class="muted small">5 saal ka test: lambe gap wale number <b>kam</b> aate hain (gap/overdue pattern t ≈ −5 se −8), isliye inka rank neeche hai.</p></div>
+      <div class="box"><h3>⚡ Momentum candidates</h3>${li(r.momentum, (c) => `${n2(c.number)} pichle 100 me ${c.last100} baar (dar +${c.rate_change}%) · rank ${c.rank}`)}
+        <p class="muted small">Test kiya: momentum se Top-10 11.71% (bina 12.49%) — gap/recency ka hi doosra roop, isliye model me nahi.</p></div>
+      <div class="box"><h3>🔄 Reverse candidates</h3>${li(r.reverse, (c) => `${n2(c.number)} (${jd(c.from)} ki palti) · rank ${c.rank}`)}</div>
+      <div class="box"><h3>🎯 Contrarian candidates</h3>${li(r.contrarian, (c) => `${n2(c.number)} rank ${c.rank} · ${esc(c.note)}`)}</div>
+      <div class="box"><h3>❌ Rejected candidates</h3>${li(r.rejected, (c) => `${n2(c.number)} pichle 60 me ${c.recent60} baar ("hot") par rank ${c.rank} · wajah: ${esc(c.why)}`)}</div>
+    </div>
+    <h3>⚠️ Main uncertainty</h3><p>${esc(r.uncertainty)}</p>
+    <h3>🔍 What changed from previous engine</h3>${li(r.changed, esc)}
+  </div>`;
+}
+
+function upgradeLog(d) {
+  const ups = d.upgrades || [];
+  if (!ups.length) return "";
+  return `<div class="card"><h2>Upgrade log: OLD METHOD → FAILURE → NEW DISCOVERY → CHANGE → TEST RESULT</h2>
+    <div class="table-wrap"><table><thead><tr><th>Version</th><th>Old method</th><th>Failure</th><th>New discovery</th><th>Change</th><th>Test result</th></tr></thead>
+    <tbody>${ups.map((u) => `<tr><td><b>${esc(u.version)}</b><br><small class="muted">${esc(u.date)}</small></td><td class="small">${esc(u.old)}</td><td class="small">${esc(u.failure)}</td><td class="small">${esc(u.discovery)}</td><td class="small">${esc(u.change)}</td><td class="small">${esc(u.test)}</td></tr>`).join("")}</tbody></table></div></div>`;
 }
 
 // ------------------------------------------------------------------- init
@@ -813,7 +859,7 @@ document.querySelectorAll(".engine-bar button").forEach((b) => b.addEventListene
   state.engine = b.dataset.engine;
   try { localStorage.setItem("engine", state.engine); } catch (_) { /* private mode */ }
   const url = new URL(location.href);
-  if (state.engine === "pattern") url.searchParams.set("engine", "pattern"); else url.searchParams.delete("engine");
+  if (state.engine !== "main") url.searchParams.set("engine", state.engine); else url.searchParams.delete("engine");
   history.replaceState(null, "", url);
   state.dash = null;
   setEngineUi();

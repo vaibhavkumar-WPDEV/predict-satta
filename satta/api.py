@@ -21,13 +21,14 @@ _state = {"last_cycle": None, "last_error": None, "running": False}
 
 
 def _run_pattern() -> None:
-    """The Pattern Engine runs after engine 4.0; its failure never touches engine 4.0."""
-    try:
-        from .pattern import service as pattern
+    """The Pattern Engine and Engine 5 run after engine 4.0; a failure never touches engine 4.0."""
+    from .pattern import service as pattern
 
-        pattern.cycle()
-    except Exception:
-        log.exception("pattern engine failed")
+    for fl in pattern.FLAVORS.values():
+        try:
+            pattern.cycle(fl=fl)
+        except Exception:
+            log.exception("%s failed", fl.kind)
 
 
 def _run_cycle(fetch: bool = True) -> dict:
@@ -113,20 +114,23 @@ async def results_csv():
     return FileResponse(path, media_type="text/csv", filename="satta-results.csv")
 
 
-@app.get("/api/pattern/dashboard")
-async def pattern_dashboard():
-    path = config.DATA_DIR / "pattern" / "dashboard.json"
-    if not path.exists():
-        raise HTTPException(404, "Pattern Engine abhi chala nahi")
+UPGRADED = ("pattern", "engine5")
+
+
+@app.get("/api/{kind}/dashboard")
+async def upgraded_dashboard(kind: str):
+    path = config.DATA_DIR / kind / "dashboard.json"
+    if kind not in UPGRADED or not path.exists():
+        raise HTTPException(404, "Yeh engine abhi chala nahi")
     return FileResponse(path, media_type="application/json")
 
 
-@app.get("/api/pattern/prediction_history.csv")
-async def pattern_history_csv():
-    path = config.DATA_DIR / "pattern" / "prediction_history.csv"
-    if not path.exists():
-        raise HTTPException(404, "Pattern Engine ki abhi koi locked prediction nahi")
-    return FileResponse(path, media_type="text/csv", filename="pattern-prediction-history.csv")
+@app.get("/api/{kind}/prediction_history.csv")
+async def upgraded_history_csv(kind: str):
+    path = config.DATA_DIR / kind / "prediction_history.csv"
+    if kind not in UPGRADED or not path.exists():
+        raise HTTPException(404, "Is engine ki abhi koi locked prediction nahi")
+    return FileResponse(path, media_type="text/csv", filename=f"{kind}-prediction-history.csv")
 
 
 @app.get("/api/prediction_history.csv")

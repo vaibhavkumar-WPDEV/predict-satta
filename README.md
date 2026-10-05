@@ -218,6 +218,33 @@ Same 7,739 draws (2021–26, walk-forward), engine 4.0 → Pattern Engine: jodi 
 Disawar 11.4% jahan 4.0 ka 12.2% behtar hai), Andar top-5 50.7% → **51.8%**, Bahar top-5
 51.3% → **53.1%**.
 
+### 4.4 Engine 5 — Pattern Engine + transitions + poori analysis (teesra switch)
+
+Switch: "Engine 5" (`web/?engine=engine5`). Files `data/engine5/`, watcher me alag step
+(`python -m satta engine5`); 4.0 aur P-1.0 par koi asar nahi.
+
+OLD METHOD → FAILURE → NEW DISCOVERY → CHANGE → TEST RESULT:
+
+- **Old:** Pattern Engine P-1.0 (recency, gap, balancing, digit patterns).
+- **Failure:** Ghaziabad 5 Oct = 78 rank 87; "pichle number ke baad kya aata hai" kabhi check nahi hua.
+- **Discovery:** koi market X dene ke baad, X ke baad pehle aa chuke number kam dohrata hai —
+  Disawar 6.8% (umeed 10.7%, z = −5.3), Gali 7.5% (10.5%, z = −4.3), Faridabad / Ghaziabad z ≈ −2.5;
+  shuffled control par z ≈ 0, dono aadhe same.
+- **Change:** jodi model me 4 transition patterns (isi market ka pichla → agla, koi bhi market ka
+  pichla → agla, digit → digit), gate aur weights data se. Andar/Bahar P-1.0 wale digit models.
+- **Test (same 7,740 draws, walk-forward):** Top-10 11.95% → **12.49%** (p ≈ 1e-12; pichle 2 saal
+  12.5% → 13.3%; Gali 12.7% → 13.7%, Disawar 12.6%, Ghaziabad 12.8%, Faridabad 11.0%),
+  Top-25 28.6% → 29.7% (Gali 31.6%).
+- **Test karke chhode:** momentum (11.71%), overdue gap (11.80%), complement/mirror (11.98%),
+  chaaron saath (12.07%), Andar/Bahar transitions (51.5 / 52.8% vs 51.8 / 53.1%) — momentum aur
+  overdue gap/balancing ko hi doosre naam se naapte hain.
+
+Har locked prediction ke saath **ENGINE 5 FINAL ANALYSIS** (`satta/pattern/report.py`): top-10 ke
+liye model score 0–100, maapi hui probability (5 saal me us rank ke number kitni baar aaye: rank
+1–5 ≈ 1.18%, 6–10 ≈ 1.32%, 11–25 ≈ 1.14%, 51–100 ≈ 0.89%; random 1%), confidence (kabhi High nahi),
+saath / virodh wale patterns; strongest, hidden, gap, momentum, reverse, contrarian, rejected
+candidates; main uncertainty; kya badla.
+
 ### 4.2b Khud ko todo + seekhne ka asar
 
 - **Shuffle test:** engine ko 3 baar aisi history par chalaya jaata hai jisme dates ka order

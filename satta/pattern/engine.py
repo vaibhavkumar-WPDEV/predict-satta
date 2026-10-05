@@ -58,7 +58,16 @@ JODI = ["rec0.5", "rec0.8", "rec0.95", "palti", "pm1", "cut", "andar_dig", "baha
 DIGIT = ["d_rec0.5", "d_rec0.8", "d_rec0.95", "d_other_place", "d_balance", "d_gap",
          "d_mkt_last", "d_mkt_last_other", "d_weekday", "d_sameday"]
 
+# Engine 5: "previous result -> next result" transitions (log of smoothed past frequency).
+# Jodi only: the same idea for the Andar/Bahar digit models tested lower (51.5 / 52.8 %
+# vs 51.8 / 53.1 %), so the digit models stay as they are.
+TRANS_JODI = ["tr_market", "tr_stream", "tr_digit_same", "tr_digit_cross"]
+
 LABELS = {
+    "tr_market": "Transition: isi market me pichle number ke baad yeh pehle aaya",
+    "tr_stream": "Transition: pichle result (koi bhi market) ke baad yeh pehle aaya",
+    "tr_digit_same": "Transition: digit → usi jagah ka digit",
+    "tr_digit_cross": "Transition: digit → doosri jagah ka digit",
     "rec0.5": "Haal ka number dobara (pichle 2-3 result)",
     "rec0.8": "Haal ka number dobara (pichle ~5 result)",
     "rec0.95": "Haal ka number dobara (pichle ~20 result)",
@@ -302,31 +311,105 @@ class Part:
                  "weight": round(float(wt.get(j, 0.0)), 4)} for j, n in enumerate(self.names)]
 
 
-class PatternEngine:
-    """Jodi, Andar and Bahar pattern models over the whole stream."""
+class Transitions:
+    """How often each result followed each previous result, from earlier draws only.
 
-    def __init__(self, table: dict):
+    Tables: the stream (previous draw of any market -> next), each market (its own
+    previous result -> its next) and the stream's digits (a->a, b->b, a->b, b->a). Every
+    cell starts at 0.5 (smoothing), so a jump never seen before is not impossible, just unseen.
+    """
+
+    def __init__(self):
+        self.stream = np.full((100, 100), 0.5)
+        self.market = {m: np.full((100, 100), 0.5) for m in config.MARKET_KEYS}
+        self.dig = np.full((4, 10, 10), 0.5)
+
+    def add(self, prev_stream: int | None, prev_market: int | None, market: str, y: int) -> None:
+        if prev_stream is not None:
+            self.stream[prev_stream, y] += 1
+            pa, pb, a, b = prev_stream // 10, prev_stream % 10, y // 10, y % 10
+            self.dig[0, pa, a] += 1
+            self.dig[1, pb, b] += 1
+            self.dig[2, pa, b] += 1
+            self.dig[3, pb, a] += 1
+        if prev_market is not None:
+            self.market[market][prev_market, y] += 1
+
+    @staticmethod
+    def previous(st: "Stream", i: int, market: str) -> tuple[int | None, int | None]:
+        hist = st.market_history(market, i)
+        return (int(st.vals[i - 1]) if i > 0 else None), (int(st.vals[hist[-1]]) if len(hist) else None)
+
+    @classmethod
+    def upto(cls, st: "Stream", i: int) -> "Transitions":
+        tr = cls()
+        for j in range(i):
+            ps, pm = cls.previous(st, j, st.markets[j])
+            tr.add(ps, pm, st.markets[j], int(st.vals[j]))
+        return tr
+
+    @staticmethod
+    def _log_row(t: np.ndarray, r: int) -> np.ndarray:
+        return np.log(t[r] / t[r].sum())
+
+    def jodi(self, prev_stream: int | None, prev_market: int | None, market: str) -> np.ndarray:
+        f = np.zeros((100, len(TRANS_JODI)))
+        if prev_market is not None:
+            f[:, 0] = self._log_row(self.market[market], prev_market)
+        if prev_stream is not None:
+            f[:, 1] = self._log_row(self.stream, prev_stream)
+            pa, pb = prev_stream // 10, prev_stream % 10
+            la, lb = self._log_row(self.dig[0], pa), self._log_row(self.dig[1], pb)
+            f[:, 2] = la[_V // 10] + lb[_V % 10]
+            ca, cb = self._log_row(self.dig[2], pa), self._log_row(self.dig[3], pb)
+            f[:, 3] = ca[_V % 10] + cb[_V // 10]
+        return f
+
+
+class PatternEngine:
+    """Jodi, Andar and Bahar pattern models over the whole stream.
+
+    transitions=True adds the jodi transition patterns (Engine 5)."""
+
+    def __init__(self, table: dict, transitions: bool = False):
         self.st = st = Stream(table)
+        self.transitions = transitions
+        self.jodi_names = JODI + (TRANS_JODI if transitions else [])
+        self.digit_names = DIGIT
         n = len(st)
-        Fj = np.zeros((n, 100, len(JODI)))
-        Fa = np.zeros((n, 10, len(DIGIT)))
-        Fb = np.zeros((n, 10, len(DIGIT)))
+        Fj = np.zeros((n, 100, len(self.jodi_names)))
+        Fa = np.zeros((n, 10, len(self.digit_names)))
+        Fb = np.zeros((n, 10, len(self.digit_names)))
+        tr = Transitions() if transitions else None
         for i in range(n):
             m, d = st.markets[i], st.dates[i]
-            Fj[i] = jodi_features(st, i, m, d)
+            Fj[i] = self._jodi_raw(i, m, d, tr)
             Fa[i] = digit_features(st, i, m, d, "a")
             Fb[i] = digit_features(st, i, m, d, "b")
+            if tr is not None:
+                ps, pm = Transitions.previous(st, i, m)
+                tr.add(ps, pm, m, int(st.vals[i]))
+        self._tr_all = tr                                   # tables with every result
         y = st.vals
-        self.jodi = Part("jodi", _zs(Fj), y, JODI)
-        self.andar = Part("andar", _zs(Fa), y // 10, DIGIT, DIGIT_GATE_T)
-        self.bahar = Part("bahar", _zs(Fb), y % 10, DIGIT, DIGIT_GATE_T)
+        self.jodi = Part("jodi", _zs(Fj), y, self.jodi_names)
+        self.andar = Part("andar", _zs(Fa), y // 10, self.digit_names, DIGIT_GATE_T)
+        self.bahar = Part("bahar", _zs(Fb), y % 10, self.digit_names, DIGIT_GATE_T)
+
+    def _jodi_raw(self, i, market, date, tr):
+        f = jodi_features(self.st, i, market, date)
+        if tr is None:
+            return f
+        return np.concatenate([f, tr.jodi(*Transitions.previous(self.st, i, market), market)], axis=1)
 
     def next(self, market: str, date: dt.date) -> dict:
         """Prediction for a draw that has no result yet, learned from every result so far."""
         st = self.st
         i = st.index_of(market, date)
+        tr = None
+        if self.transitions:
+            tr = self._tr_all if i >= len(st) else Transitions.upto(st, i)
         out = {"position": i}
-        for part, raw in ((self.jodi, jodi_features(st, i, market, date)),
+        for part, raw in ((self.jodi, self._jodi_raw(i, market, date, tr)),
                           (self.andar, digit_features(st, i, market, date, "a")),
                           (self.bahar, digit_features(st, i, market, date, "b"))):
             cols, w = part.refit(min(i, len(part.y)))

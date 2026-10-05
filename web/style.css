@@ -62,9 +62,14 @@ body {
 }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 body[data-engine="pattern"] { --accent: #a371f7; --accent-ink: #ffffff; }
+body[data-engine="engine5"] { --accent: #2fb5a8; --accent-ink: #00201d; }
 @media (prefers-color-scheme: light) {
   body[data-engine="pattern"] { --accent: #8250df; }
+  body[data-engine="engine5"] { --accent: #0f7d74; --accent-ink: #ffffff; }
 }
+.e5-sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.e5-sections .box ul { margin: 4px 0 0; padding-left: 18px; }
+.e5-sections .box li { margin-bottom: 4px; }
 .engine-bar {
   display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
   padding: 10px 20px; background: var(--panel-2); border-bottom: 1px solid var(--line);
