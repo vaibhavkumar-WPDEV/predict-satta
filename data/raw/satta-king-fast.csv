@@ -1,8 +1,4 @@
 date,market,value
-2026-08-28,disawar,27
-2026-08-28,faridabad,23
-2026-08-28,gali,86
-2026-08-28,ghaziabad,59
 2026-08-29,disawar,31
 2026-08-29,faridabad,62
 2026-08-29,gali,45
@@ -153,4 +149,5 @@ date,market,value
 2026-10-06,ghaziabad,38
 2026-10-07,disawar,23
 2026-10-07,faridabad,87
+2026-10-07,gali,29
 2026-10-07,ghaziabad,84
